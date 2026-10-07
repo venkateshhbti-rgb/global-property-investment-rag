@@ -1,0 +1,125 @@
+.admin-panel {
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+  background: #fff;
+}
+
+.admin-panel h3 {
+  font-size: 1.15rem;
+  color: #1e293b;
+  margin-bottom: 0.25rem;
+}
+
+.panel-hint,
+.panel-empty {
+  color: #64748b;
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  margin-bottom: 1rem;
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.admin-table th,
+.admin-table td {
+  text-align: left;
+  padding: 0.6rem 0.5rem;
+  border-bottom: 1px solid #e2e8f0;
+  vertical-align: middle;
+}
+
+.admin-table th {
+  color: #64748b;
+  font-weight: 600;
+  font-size: 0.8rem;
+}
+
+.muted {
+  color: #94a3b8;
+  font-size: 0.8rem;
+}
+
+.mono {
+  font-family: ui-monospace, Consolas, monospace;
+}
+
+.pill {
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.pill.on { background: #dcfce7; color: #166534; }
+.pill.off { background: #f1f5f9; color: #64748b; }
+
+.row-actions {
+  white-space: nowrap;
+  text-align: right !important;
+}
+
+.row-actions button {
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  border-radius: 0.375rem;
+  padding: 0.35rem;
+  margin-left: 0.3rem;
+  cursor: pointer;
+  color: #475569;
+}
+
+.row-actions button:hover:not(:disabled) { background: #f1f5f9; }
+.row-actions button.danger:hover:not(:disabled) { background: #fee2e2; color: #991b1b; }
+.row-actions button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.admin-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.admin-form input,
+.admin-form select {
+  flex: 1 1 180px;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.375rem;
+  font-size: 0.9rem;
+}
+
+.admin-form button {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.55rem 1rem;
+  border: none;
+  border-radius: 0.375rem;
+  background: #2563eb;
+  color: #fff;
+  cursor: pointer;
+}
+
+.admin-form button:disabled {
+  background: #94a3b8;
+  cursor: not-allowed;
+}
+
+.panel-notice {
+  margin-top: 0.75rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: 0.375rem;
+  font-size: 0.9rem;
+}
+
+.panel-notice.success { background: #dcfce7; color: #166534; }
+.panel-notice.error { background: #fee2e2; color: #991b1b; }

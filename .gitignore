@@ -1,0 +1,67 @@
+# Backend
+backend/.env
+backend/.env.local
+backend/venv/
+backend/__pycache__/
+backend/*.pyc
+backend/chroma_db/
+backend/.DS_Store
+backend/*.egg-info/
+backend/dist/
+backend/build/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.env.local
+frontend/.env.*.local
+frontend/.DS_Store
+frontend/.vscode/
+frontend/.idea/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Dependencies
+node_modules/
+pip-packages/
+
+# Cache
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Runtime data (users, sessions, API keys)
+backend/data_store.json
+backend/data_store.json.tmp
+
+# Local only
+.venv/
+data/
