@@ -18,7 +18,7 @@ class Settings(BaseSettings):
 
     # Auth / storage
     ADMIN_USERNAME: str = "admin"
-    ADMIN_PASSWORD: str = "admin123"
+    ADMIN_PASSWORD: str = ""  # empty = generate a random one on first run
     DATA_STORE_PATH: str = "./data_store.json"
     MARKET_CACHE_PATH: str = "./market_cache.json"
 

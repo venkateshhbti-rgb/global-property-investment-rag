@@ -64,9 +64,13 @@ class Store:
     def _seed(self):
         with _lock:
             if not self.data["users"]:
-                self.add_user(settings.ADMIN_USERNAME, settings.ADMIN_PASSWORD, "admin")
-                print(f"[auth] Created admin user '{settings.ADMIN_USERNAME}'. "
-                      f"Set ADMIN_PASSWORD in backend/.env before first run to choose your own password.")
+                password = settings.ADMIN_PASSWORD or secrets.token_urlsafe(9)
+                self.add_user(settings.ADMIN_USERNAME, password, "admin")
+                if settings.ADMIN_PASSWORD:
+                    print(f"[auth] Created admin user '{settings.ADMIN_USERNAME}' with the ADMIN_PASSWORD from .env.")
+                else:
+                    print(f"[auth] Created admin user '{settings.ADMIN_USERNAME}' with a generated password: {password}")
+                    print("[auth] Save it now, it is not shown again. Or set ADMIN_PASSWORD in backend/.env before first run.")
             if not self.data["llms"] and settings.OPENAI_API_KEY:
                 self.add_llm("OpenAI (from .env)", "openai", settings.OPENAI_MODEL, settings.OPENAI_API_KEY)
 

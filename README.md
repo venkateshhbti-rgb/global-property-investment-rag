@@ -36,6 +36,26 @@ data/
 
 Then open **Status** (admin) and click **Reload Documents**. The new market appears in the Compare tab, in the footer, and in the bot's list of available markets. Questions about a market with no folder get a "no data" reply instead of guessed figures.
 
+## 🧭 Prompt Framework (CCSCR)
+
+The consultant's prompts follow the **CCSCR** framework: **C**ontext, **C**onstraints, **S**tructure, **C**heckpoints, **R**eview. The prompt text lives in `backend/rag_system.py` (`BASE_RULES`, `CHAT_FORMAT`, `COMPARE_FORMAT` and the helper methods that build each request).
+
+| Part | What it means here | Where it is | Status |
+|---|---|---|---|
+| **Context** | Role: global property investment analyst for three personas (individual investors $200K-$2M, wealth advisors serving HNIs, relocation firms). Each request carries the user's profile, the list of available markets, live macro/FX data and the retrieved document excerpts. | `BASE_RULES`, `_profile_block`, `_markets_block`, `_live_block`, `_context` | Implemented |
+| **Constraints** | Use only the supplied context and live data. No personalized financial advice ("requires a licensed advisor review"). Ranges instead of false precision. Tax and regulatory points are "indicative only". Flag missing or thin data. Never move a live figure from one market to another. | `BASE_RULES` | Implemented |
+| **Structure** | Full analysis in five parts (Market Context, Price Comparison, Rental Yield, Cost of Capital, Risk Flags) plus a Bottom line, about 200 words. Compare uses a shorter per-market format. Clarifying questions use a fixed `CLARIFY:` format that the UI turns into an answer form. | `CHAT_FORMAT`, `COMPARE_FORMAT`, `_parse_clarify` | Implemented |
+| **Checkpoints** | Flag data older than 18 months (each live figure carries its year). Add a currency volatility warning when currencies differ, backed by the 12-month FX move. Don't ask for details already given (`_known_facts`, `_drop_known`). Market not in the data gets a "no data" reply. | `BASE_RULES`, `market_data.py`, `_known_facts`, `_drop_known` | Partly implemented |
+| **Review** | Analytical, not salesy tone, with a "why it matters" for key metrics. Each answer lists its sources (documents and live APIs). | `BASE_RULES`, sources list in the chat UI | Partly implemented |
+
+**Not implemented yet**
+- Suggesting alternative cities when rental comparables are missing.
+- Cross-checking recent tax-rule changes against an official source.
+- Comparing answers against past advisor briefs in a knowledge base (add example briefs to `data/` to make them retrievable).
+- An automatic check that every figure in an answer appears in the documents or live data.
+
+If you change any prompt text, bump `CACHE_VERSION` in `backend/store.py` so saved answers written under the old rules are not reused.
+
 ## 🏗️ System Architecture
 
 ```
