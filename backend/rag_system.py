@@ -12,6 +12,7 @@ from sklearn.metrics.pairwise import linear_kernel
 from config import settings
 from document_loader import PropertyDocumentLoader
 from llm_client import call_llm
+from market_data import market_data
 
 INVESTOR_STYLE = {
     "individual": "Individual investor: plain language, focus on net yield and total cost of ownership.",
@@ -27,7 +28,8 @@ RISK_STYLE = {
 BASE_RULES = """You are a Global Property Investment Analyst serving individual investors ($200K-$2M), independent wealth advisors advising HNIs, and cross-border relocation firms.
 
 RULES:
-- Use ONLY the CONTEXT below. If data is missing or thin, say so in one line (e.g. "Limited rental data for this area").
+- Use ONLY the CONTEXT and LIVE MARKET DATA below. If data is missing or thin, say so in one line (e.g. "Limited rental data for this area").
+- LIVE MARKET DATA comes from open APIs (World Bank, BIS, currency-api) and carries a year or date. Use it for inflation, GDP, interest-rate, population, house-price-index and currency facts, and cite the source and year, e.g. "(World Bank, 2025)". It is country-level, so say so when applying it to a city. Each line starts with its market name: attribute a figure ONLY to that market, never move a figure from one market to another, and say \"not available\" when a line says so. If it conflicts with an older figure in the CONTEXT for the same metric, prefer the live figure and note the difference in one line. Flag any live figure older than 18 months. It has NO rents, yields or prices per sqm; those come only from the CONTEXT.
 - If the user asks about a market that is not in AVAILABLE MARKETS, say there is no data for it, name the markets you do have, and do not guess figures.
 - State data freshness only if the context gives a date; otherwise write "Data date not specified in sources". Flag data older than 18 months.
 - Never give personalized financial advice; say "This requires a licensed advisor review" if asked what to buy.
@@ -37,9 +39,9 @@ RULES:
 - Tailor the analysis to the USER PROFILE when one is given. Do not ask for anything already in it."""
 
 CHAT_FORMAT = """CLARIFYING QUESTIONS:
-Ask only on the FIRST reply of a conversation, and only about details that materially change the answer and are not already in the USER PROFILE or the conversation. Typical gaps: target market (one of AVAILABLE MARKETS, or compare several), property type (Residential / Commercial), holding period (Under 3 years / 3-7 years / 7+ years), main goal (Rental income / Capital growth / Balanced).
-- Ask 2-3 questions covering what is missing (market, property type, holding period, goal). Skip anything the user already stated.
-- If you already asked in an earlier turn, or the user's latest message answers your questions, do NOT ask again. Give the full analysis.
+Ask only about details that materially change the answer and are not already in the USER PROFILE or anywhere in the conversation. You may ask at any point, including on follow-up questions. Typical gaps: target market (one of AVAILABLE MARKETS, or compare several), property type (Residential / Commercial), holding period (Under 3 years / 3-7 years / 7+ years), main goal (Rental income / Capital growth / Balanced).
+- Ask 1-3 questions covering what is missing. Never repeat a question the user has already answered, and skip anything they already stated.
+- If nothing material is missing, or the user's latest message answers your questions, give the full analysis instead of asking more.
 - Every question MUST have 2-4 short options after "|". Reply with EXACTLY this format and nothing else, for example:
 CLARIFY:
 Q: Which market should I focus on? | {market_options}
@@ -119,6 +121,7 @@ class PropertyInvestmentRAG:
         )
         self.doc_matrix = self.vectorizer.fit_transform([d.page_content for d in self.split_documents])
         print(f"✓ Indexed {self.doc_matrix.shape[0]} chunks across {len(self.documents_by_region)} regions")
+        market_data.refresh_async(self.regions)
         print("=" * 60)
 
     # ---------- retrieval ----------
@@ -153,6 +156,43 @@ class PropertyInvestmentRAG:
             stripped = re.sub(re.escape(region), " ", stripped, flags=re.IGNORECASE)
         stripped = " ".join(stripped.split())
         return stripped if len(stripped) > 3 else text
+
+    @staticmethod
+    def _live_block(live_text: str) -> str:
+        if not live_text:
+            return "LIVE MARKET DATA: not available right now."
+        return "LIVE MARKET DATA (open APIs):\n" + live_text
+
+    @staticmethod
+    def _regions_of(docs: List[Document], limit: int = 3) -> List[str]:
+        seen: List[str] = []
+        for d in docs:
+            r = d.metadata.get("region")
+            if r and r not in seen:
+                seen.append(r)
+        return seen[:limit]
+
+    def _known_facts(self, user_text: str) -> str:
+        """Details the user has already given anywhere in the conversation, so the AI never asks for them again."""
+        t = user_text.lower()
+        facts = []
+        markets = self._mentioned_regions(user_text)
+        if markets:
+            facts.append("target market: " + ", ".join(markets))
+        horizon = re.search(r"\d+(?:\s*-\s*\d+)?\+?\s*-?\s*(?:years?|yrs?)\b", t)
+        if horizon:
+            facts.append(f"holding period: {horizon.group(0).strip()}")
+        if re.search(r"\b(residential|apartments?|villas?|studios?|townhouses?|flats?)\b", t):
+            facts.append("property type: residential")
+        elif re.search(r"\b(commercial|offices?|retail|warehouses?)\b", t):
+            facts.append("property type: commercial")
+        if re.search(r"rental income|rental yield|\byields?\b|cash ?flow|passive income", t):
+            facts.append("goal: rental income")
+        elif re.search(r"capital growth|appreciation|capital gains?", t):
+            facts.append("goal: capital growth")
+        if not facts:
+            return ""
+        return "ALREADY KNOWN FROM THE CONVERSATION (never ask about these again):\n" + "\n".join(f"- {f}" for f in facts)
 
     def _mentioned_regions(self, text: str) -> List[str]:
         lowered = text.lower()
@@ -198,14 +238,28 @@ class PropertyInvestmentRAG:
     def _parse_clarify(answer: str) -> Optional[List[Dict[str, Any]]]:
         if not answer.lstrip().upper().startswith("CLARIFY"):
             return None
+        body = answer.lstrip()[len("CLARIFY"):].lstrip(": \n")
         questions = []
-        for line in answer.splitlines():
+        for line in body.splitlines():
             line = line.strip().lstrip("-*0123456789. ").strip()
-            if line.upper().startswith("Q:"):
-                parts = [p.strip() for p in line[2:].split("|") if p.strip()]
-                if parts:
-                    questions.append({"question": parts[0], "options": parts[1:]})
+            if line[:2].upper() == "Q:":
+                line = line[2:]
+            parts = [p.strip() for p in line.split("|") if p.strip()]
+            if parts and (len(parts) > 1 or parts[0].endswith("?")):
+                questions.append({"question": parts[0], "options": parts[1:]})
         return questions[:3] or None
+
+    @staticmethod
+    def _drop_known(questions: List[Dict[str, Any]], known: str) -> List[Dict[str, Any]]:
+        """Remove questions about details the user has already given."""
+        topics = {
+            "target market": r"market|city|country|location|where",
+            "holding period": r"holding|hold|how long|period|horizon|years",
+            "property type": r"property type|type of property|residential|commercial",
+            "goal": r"goal|objective|priority|income|growth",
+        }
+        patterns = [pat for name, pat in topics.items() if name in known]
+        return [q for q in questions if not any(re.search(p, q["question"], re.I) for p in patterns)]
 
     # ---------- generation ----------
     def _generate(self, system: str, messages: List[Dict[str, str]], docs: List[Document],
@@ -242,13 +296,35 @@ class PropertyInvestmentRAG:
         else:
             docs = self.retrieve(query_text, k=settings.RETRIEVAL_K)
 
+        live_regions = mentioned or self._regions_of(docs)
+        live_text, live_sources = market_data.context_for(live_regions)
+
         system = "\n\n".join([
             BASE_RULES, self._chat_format(), self._markets_block(), self._profile_block(profile),
+            self._known_facts(" ".join(user_turns)),
+            self._live_block(live_text),
             "CONTEXT:\n" + (self._context(docs) or "No relevant documents found."),
         ])
         time.sleep(0.3)
         result = self._generate(system, recent, docs, llm_cfg, max_tokens=500)
+        result["sources"] = result["sources"] + live_sources
         questions = self._parse_clarify(result["answer"]) if result["success"] else None
+        if questions:
+            kept = self._drop_known(questions, self._known_facts(" ".join(user_turns)))
+            if kept:
+                questions = kept
+            else:
+                first_usage = result["usage"]
+                full_format = self._chat_format()
+                analysis_only = (
+                    "Do NOT ask any questions. State any assumption in one line and give the full analysis now.\n\n"
+                    + full_format[full_format.index("FULL ANALYSIS FORMAT"):]
+                )
+                result = self._generate(system.replace(full_format, analysis_only), recent, docs, llm_cfg, max_tokens=500)
+                result["sources"] = result["sources"] + live_sources
+                if first_usage and result.get("usage"):
+                    result["usage"] = {k: first_usage[k] + result["usage"][k] for k in first_usage}
+                questions = None
         if questions:
             result["clarifying_questions"] = questions
             numbered = "\n".join(f"{i}. {q['question']}" for i, q in enumerate(questions, 1))
@@ -265,12 +341,16 @@ class PropertyInvestmentRAG:
         for region in regions:
             docs.extend(self.retrieve(self._without_regions(metric), k=per_region, region=region))
 
+        live_text, live_sources = market_data.context_for(regions)
         system = "\n\n".join([
             BASE_RULES, COMPARE_FORMAT, self._markets_block(), self._profile_block(profile),
+            self._live_block(live_text),
             "CONTEXT:\n" + (self._context(docs, limit=min(per_region * len(regions), 12)) or "No relevant documents found."),
         ])
         question = f"Compare {metric} across: {', '.join(regions)}."
-        return self._generate(system, [{"role": "user", "content": question}], docs, llm_cfg)
+        result = self._generate(system, [{"role": "user", "content": question}], docs, llm_cfg)
+        result["sources"] = result["sources"] + live_sources
+        return result
 
     # ---------- admin ----------
     def get_system_stats(self) -> Dict[str, Any]:

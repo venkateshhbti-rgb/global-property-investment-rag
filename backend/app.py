@@ -2,11 +2,13 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from config import settings
 from llm_client import call_llm
+from market_data import market_data
 from rag_system import PropertyInvestmentRAG
 from store import make_cache_key, store
 
@@ -157,7 +159,7 @@ async def chat_with_consultant(request: ChatRequest, user: Dict[str, Any] = Depe
     cache_key = None
     if llm_cfg:
         user_turns = [m["content"] for m in messages[-8:] if m["role"] == "user"]
-        cache_key = make_cache_key("chat", user_turns, request.user_profile, llm_cfg, rag.data_version)
+        cache_key = make_cache_key("chat", user_turns, request.user_profile, llm_cfg, f"{rag.data_version}:{market_data.stamp()}")
         saved = store.cache_get(cache_key)
         if saved:
             return {
@@ -204,7 +206,7 @@ async def compare_regions(request: ComparisonRequest, user: Dict[str, Any] = Dep
     cache_key = None
     if llm_cfg:
         cache_key = make_cache_key(
-            "compare", [request.metric] + sorted(request.regions), request.user_profile, llm_cfg, rag.data_version
+            "compare", [request.metric] + sorted(request.regions), request.user_profile, llm_cfg, f"{rag.data_version}:{market_data.stamp()}"
         )
         saved = store.cache_get(cache_key)
         if saved:
@@ -249,6 +251,19 @@ async def cache_info(user: Dict[str, Any] = Depends(admin_user)):
 @app.delete("/api/admin/cache")
 async def clear_cache(user: Dict[str, Any] = Depends(admin_user)):
     return {"cleared": store.cache_clear()}
+
+
+@app.get("/api/admin/market-data")
+async def get_market_data(user: Dict[str, Any] = Depends(admin_user)):
+    rag = require_rag()
+    return {"markets": market_data.snapshot(rag.regions), "stamp": market_data.stamp()}
+
+
+@app.post("/api/admin/market-data/refresh")
+async def refresh_market_data(user: Dict[str, Any] = Depends(admin_user)):
+    rag = require_rag()
+    await run_in_threadpool(market_data.refresh, rag.regions, True)
+    return {"markets": market_data.snapshot(rag.regions), "stamp": market_data.stamp()}
 
 
 @app.get("/api/admin/users")

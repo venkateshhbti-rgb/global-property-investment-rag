@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     ADMIN_USERNAME: str = "admin"
     ADMIN_PASSWORD: str = "admin123"
     DATA_STORE_PATH: str = "./data_store.json"
+    MARKET_CACHE_PATH: str = "./market_cache.json"
 
     # Vector Store Configuration
     CHROMA_DB_PATH: str = "./chroma_db"

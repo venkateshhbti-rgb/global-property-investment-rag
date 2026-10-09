@@ -65,3 +65,5 @@ backend/data_store.json.tmp
 # Local only
 .venv/
 data/
+backend/market_cache.json
+backend/market_cache.json.tmp

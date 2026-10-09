@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Plus, Trash2, PlugZap, Power, Pencil } from 'lucide-react'
+import { Plus, Trash2, PlugZap, Power, Pencil, RefreshCw } from 'lucide-react'
 import { api, formatTokens } from '../api.jsx'
 import './AdminPanels.css'
 
@@ -210,6 +210,88 @@ export function UsersPanel({ token, currentUser }) {
         </button>
       </form>
 
+      {notice && <div className={`panel-notice ${notice.type}`}>{notice.text}</div>}
+    </div>
+  )
+}
+
+const pct = (ind) => (ind ? `${ind.value.toFixed(1)}% (${ind.year})` : '-')
+
+export function LiveDataPanel({ token }) {
+  const [markets, setMarkets] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [notice, setNotice] = useState(null)
+
+  const load = useCallback(async () => {
+    try {
+      const data = await api('/api/admin/market-data', { token })
+      setMarkets(data.markets)
+    } catch (err) {
+      setNotice({ type: 'error', text: err.message })
+    }
+  }, [token])
+
+  useEffect(() => { load() }, [load])
+
+  const refresh = async () => {
+    setLoading(true)
+    setNotice(null)
+    try {
+      const data = await api('/api/admin/market-data/refresh', { method: 'POST', token })
+      setMarkets(data.markets)
+      setNotice({ type: 'success', text: 'Live data refreshed from World Bank, BIS and currency-api' })
+    } catch (err) {
+      setNotice({ type: 'error', text: err.message })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="admin-panel">
+      <h3>Live Market Data (open APIs)</h3>
+      <p className="panel-hint">
+        Country-level figures from the World Bank, BIS house-price index and currency-api, added to every answer with
+        their year. They refresh daily. Check the "Matched to" column; if a market maps to the wrong country, add it to
+        <code> data/_market_overrides.json</code> like {'{"Dubai": "AE"}'}.
+      </p>
+
+      <div className="table-wrap">
+        <table className="admin-table">
+          <thead>
+            <tr>
+              <th>Market</th><th>Matched to</th><th>Inflation</th><th>GDP growth</th>
+              <th>Lending rate</th><th>House prices y/y</th><th>FX (per USD, 12m)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {markets.length === 0 && (
+              <tr><td colSpan="7" className="muted">No data yet. Click Refresh (takes about 30 seconds).</td></tr>
+            )}
+            {markets.map((m) => (
+              <tr key={m.region}>
+                <td>{m.region}</td>
+                <td>{m.country || '-'}{m.currency ? ` / ${m.currency}` : ''}
+                  {m.errors?.length > 0 && <div className="muted">{m.errors[0]}</div>}
+                </td>
+                <td>{pct(m.indicators?.inflation)}</td>
+                <td>{pct(m.indicators?.gdp_growth)}</td>
+                <td>{pct(m.indicators?.lending_rate)}</td>
+                <td>{m.house_prices ? `${m.house_prices.yoy.toFixed(1)}% (${m.house_prices.period})` : 'n/a'}</td>
+                <td>
+                  {m.fx ? `${m.fx.rate.toFixed(2)}${m.fx.change_12m_pct != null ? ` (${m.fx.change_12m_pct > 0 ? '+' : ''}${m.fx.change_12m_pct}%)` : ''}` : '-'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="admin-form">
+        <button onClick={refresh} disabled={loading}>
+          <RefreshCw size={16} /> {loading ? 'Refreshing...' : 'Refresh live data'}
+        </button>
+      </div>
       {notice && <div className={`panel-notice ${notice.type}`}>{notice.text}</div>}
     </div>
   )

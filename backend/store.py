@@ -13,7 +13,7 @@ from config import settings
 
 _lock = threading.RLock()
 TOKEN_TTL_SECONDS = 7 * 24 * 3600
-CACHE_VERSION = "v3"  # bump when prompts change so old saved answers are not reused
+CACHE_VERSION = "v7"  # bump when prompts change so old saved answers are not reused
 CACHE_MAX_ENTRIES = 500
 
 
