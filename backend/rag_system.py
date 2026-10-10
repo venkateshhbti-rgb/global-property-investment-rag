@@ -6,13 +6,13 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 from langchain.schema import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import linear_kernel
 
 from config import settings
 from document_loader import PropertyDocumentLoader
 from llm_client import call_llm
 from market_data import market_data
+from retriever import HybridRetriever, LocalEmbedder, OpenAIEmbedder
+from store import store
 
 INVESTOR_STYLE = {
     "individual": "Individual investor: plain language, focus on net yield and total cost of ownership.",
@@ -75,8 +75,7 @@ class PropertyInvestmentRAG:
         self.documents_by_region: Dict[str, List[Document]] = {}
         self.documents_by_type: Dict[str, List[Document]] = {}
         self.region_indices: Dict[str, np.ndarray] = {}
-        self.vectorizer: Optional[TfidfVectorizer] = None
-        self.doc_matrix = None
+        self.retriever: Optional[HybridRetriever] = None
         self.data_version = ""
         self._initialize()
 
@@ -86,7 +85,7 @@ class PropertyInvestmentRAG:
         print("=" * 60)
 
         self.documents_by_region, self.documents_by_type = {}, {}
-        self.region_indices, self.vectorizer, self.doc_matrix = {}, None, None
+        self.region_indices, self.retriever = {}, None
 
         self.documents = self.loader.load_all_documents()
         if not self.documents:
@@ -116,27 +115,58 @@ class PropertyInvestmentRAG:
             (f"{len(self.split_documents)}|" + "|".join(f"{r}/{f}" for r, f in files)).encode()
         ).hexdigest()[:12]
 
-        self.vectorizer = TfidfVectorizer(
-            stop_words="english", ngram_range=(1, 2), max_features=200000, sublinear_tf=True
+        self.retriever = HybridRetriever(
+            [d.page_content for d in self.split_documents], self.region_indices,
+            self._embedder_factory(), settings.EMBEDDINGS_DIR, self._reranker_factory(),
         )
-        self.doc_matrix = self.vectorizer.fit_transform([d.page_content for d in self.split_documents])
-        print(f"✓ Indexed {self.doc_matrix.shape[0]} chunks across {len(self.documents_by_region)} regions")
+        print(f"✓ Indexed {len(self.split_documents)} chunks across {len(self.documents_by_region)} regions (keyword search ready)")
+        self.retriever.start_background()
+        print("  Semantic embeddings and reranker are loading in the background; answers improve once they finish.")
         market_data.refresh_async(self.regions)
         print("=" * 60)
 
     # ---------- retrieval ----------
+    def _embedder_factory(self):
+        provider = settings.EMBEDDING_PROVIDER.lower()
+        if provider == "off":
+            return None
+        key = store.openai_key() or settings.OPENAI_API_KEY
+        if provider == "openai" or (provider == "auto" and key):
+            if not key:
+                return None
+            return lambda: OpenAIEmbedder(key, settings.EMBEDDING_MODEL, settings.EMBEDDING_DIMENSIONS)
+        return lambda: LocalEmbedder(settings.LOCAL_EMBEDDING_MODEL, settings.MODELS_DIR)
+
+    @staticmethod
+    def _reranker_factory():
+        if not settings.RERANK_ENABLED:
+            return None
+
+        def load():
+            from fastembed.rerank.cross_encoder import TextCrossEncoder
+            return TextCrossEncoder(settings.RERANK_MODEL, cache_dir=settings.MODELS_DIR)
+
+        return load
+
+    def retrieval_status(self) -> Dict[str, Any]:
+        if not self.retriever:
+            return {"mode": "none", "total": 0, "embedded": 0}
+        return {"mode": self.retriever.mode, **self.retriever.status}
+
+    @property
+    def retrieval_tag(self) -> str:
+        return self.retriever.mode if self.retriever else "none"
+
     def retrieve(self, query: str, k: int = 5, region: Optional[str] = None) -> List[Document]:
-        if self.vectorizer is None or not query.strip():
+        if self.retriever is None:
             return []
-        sims = linear_kernel(self.vectorizer.transform([query]), self.doc_matrix)[0]
-        if region is not None:
-            idx = self.region_indices.get(region)
-            if idx is None or len(idx) == 0:
-                return []
-            order = idx[np.argsort(sims[idx])[::-1][:k]]
-        else:
-            order = np.argsort(sims)[::-1][:k]
-        return [self.split_documents[i] for i in order if sims[i] > 0]
+        return [self.split_documents[i] for i in self.retriever.search(query, k=k, region=region)]
+
+    @staticmethod
+    def _clean_query(text: str) -> str:
+        """Remove form boilerplate so retrieval sees only what the user actually asked."""
+        text = re.sub(r"My answers:|Please give me the full analysis\.?", " ", text)
+        return " ".join(text.split())
 
     @property
     def regions(self) -> List[str]:
@@ -249,6 +279,35 @@ class PropertyInvestmentRAG:
                 questions.append({"question": parts[0], "options": parts[1:]})
         return questions[:3] or None
 
+    def _options_for(self, question: str) -> List[str]:
+        """Sensible answer choices for a clarifying question, chosen by its topic."""
+        q = question.lower()
+        if re.search(r"\b(city|cities|market|markets|country|countries|location|where)\b", q):
+            return self.regions[:6] + (["Compare several"] if len(self.regions) > 1 else [])
+        if re.search(r"property type|type of property|residential|commercial", q):
+            return ["Residential", "Commercial"]
+        if re.search(r"holding|how long|horizon|period", q):
+            return ["Under 3 years", "3-7 years", "7+ years"]
+        if re.search(r"goal|objective|priority|income|growth", q):
+            return ["Rental income", "Capital growth", "Balanced"]
+        return []
+
+    def _fill_options(self, questions: Optional[List[Dict[str, Any]]]) -> Optional[List[Dict[str, Any]]]:
+        for q in questions or []:
+            if not q["options"]:
+                q["options"] = self._options_for(q["question"])
+        return questions
+
+    @staticmethod
+    def _questions_from_text(answer: str) -> Optional[List[Dict[str, Any]]]:
+        """The model sometimes asks in plain sentences instead of the CLARIFY format. Treat a short,
+        question-only reply as clarifying questions so the user still gets the answer form."""
+        if len(answer.split()) > 90 or "**" in answer:
+            return None
+        found = [m.strip(" -*0123456789.") for m in re.findall(r"[^.?!\n]*\?", answer)]
+        found = [q + "?" if not q.endswith("?") else q for q in found if len(q) > 8]
+        return [{"question": q, "options": []} for q in found[:3]] or None
+
     @staticmethod
     def _drop_known(questions: List[Dict[str, Any]], known: str) -> List[Dict[str, Any]]:
         """Remove questions about details the user has already given."""
@@ -287,7 +346,7 @@ class PropertyInvestmentRAG:
 
         recent = messages[-8:]
         user_turns = [m["content"] for m in recent if m["role"] == "user"]
-        query_text = " ".join(user_turns[-3:])
+        query_text = self._clean_query(" ".join(user_turns[-3:]))
         mentioned = self._mentioned_regions(query_text)
         if mentioned:
             per_region = max(2, settings.RETRIEVAL_K // len(mentioned))
@@ -308,9 +367,13 @@ class PropertyInvestmentRAG:
         time.sleep(0.3)
         result = self._generate(system, recent, docs, llm_cfg, max_tokens=500)
         result["sources"] = result["sources"] + live_sources
-        questions = self._parse_clarify(result["answer"]) if result["success"] else None
+        questions = None
+        if result["success"]:
+            questions = self._fill_options(
+                self._parse_clarify(result["answer"]) or self._questions_from_text(result["answer"])
+            )
         if questions:
-            kept = self._drop_known(questions, self._known_facts(" ".join(user_turns)))
+            kept =self._drop_known(questions, self._known_facts(" ".join(user_turns)))
             if kept:
                 questions = kept
             else:

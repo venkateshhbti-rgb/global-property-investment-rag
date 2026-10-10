@@ -67,3 +67,5 @@ backend/data_store.json.tmp
 data/
 backend/market_cache.json
 backend/market_cache.json.tmp
+backend/models/
+backend/embeddings/

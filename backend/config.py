@@ -15,6 +15,16 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-3.5-turbo"
     EMBEDDING_MODEL: str = "text-embedding-3-small"
+    EMBEDDING_DIMENSIONS: int = 512  # OpenAI text-embedding-3 supports shorter vectors: smaller, faster, near-equal quality
+
+    # Retrieval: "auto" uses OpenAI embeddings when an OpenAI key exists, otherwise a local model.
+    # Use "local" (free, private, slow on laptops), "openai", or "off" (keyword search only).
+    EMBEDDING_PROVIDER: str = "auto"
+    LOCAL_EMBEDDING_MODEL: str = "BAAI/bge-small-en-v1.5"
+    RERANK_ENABLED: bool = True
+    RERANK_MODEL: str = "Xenova/ms-marco-MiniLM-L-6-v2"
+    EMBEDDINGS_DIR: str = "./embeddings"
+    MODELS_DIR: str = "./models"
 
     # Auth / storage
     ADMIN_USERNAME: str = "admin"

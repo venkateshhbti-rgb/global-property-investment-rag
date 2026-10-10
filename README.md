@@ -56,6 +56,29 @@ The consultant's prompts follow the **CCSCR** framework: **C**ontext, **C**onstr
 
 If you change any prompt text, bump `CACHE_VERSION` in `backend/store.py` so saved answers written under the old rules are not reused.
 
+## 🔎 Retrieval (Hybrid RAG)
+
+Passages are found with **hybrid retrieval**, implemented in `backend/retriever.py`:
+
+1. **Keyword search** (TF-IDF) and **semantic search** (embeddings) each return their best candidates.
+2. The two rankings are merged with Reciprocal Rank Fusion.
+3. A **cross-encoder reranker** re-scores the top candidates and keeps the best few.
+4. If the question names a market, all of this runs inside that market's documents only.
+
+Embeddings are built in the background and cached in `backend/embeddings/` by passage hash. The app works immediately with keyword search plus the reranker, improves when embedding finishes, resumes after an interruption, and only embeds new or changed documents on later runs. The **Status** tab (admin) shows progress.
+
+| Setting in `backend/.env` | Meaning |
+|---|---|
+| `EMBEDDING_PROVIDER=auto` | Use OpenAI embeddings if an OpenAI key is configured, otherwise a local model (default) |
+| `EMBEDDING_PROVIDER=openai` | Always OpenAI (`text-embedding-3-small`, 512 dimensions). Fast; roughly $0.10-0.15 for about 28,000 passages |
+| `EMBEDDING_PROVIDER=local` | Local `bge-small` model via fastembed. Free and private, but slow on a laptop CPU (an hour or more for a large corpus) |
+| `EMBEDDING_PROVIDER=off` | Keyword search only |
+| `RERANK_ENABLED=false` | Skip the reranker (saves about a second per question) |
+
+Local models download on first use into `backend/models/` (about 200 MB). Changing the embedding provider or model builds a separate cache; the old one is kept.
+
+**Windows note:** `onnxruntime` must be imported before `scikit-learn`, otherwise Python crashes with a segmentation fault. `retriever.py` does this for you; keep that import at the top of the file.
+
 ## 🏗️ System Architecture
 
 ```

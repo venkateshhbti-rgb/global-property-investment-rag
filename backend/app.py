@@ -159,7 +159,7 @@ async def chat_with_consultant(request: ChatRequest, user: Dict[str, Any] = Depe
     cache_key = None
     if llm_cfg:
         user_turns = [m["content"] for m in messages[-8:] if m["role"] == "user"]
-        cache_key = make_cache_key("chat", user_turns, request.user_profile, llm_cfg, f"{rag.data_version}:{market_data.stamp()}")
+        cache_key = make_cache_key("chat", user_turns, request.user_profile, llm_cfg, f"{rag.data_version}:{market_data.stamp()}:{rag.retrieval_tag}")
         saved = store.cache_get(cache_key)
         if saved:
             return {
@@ -206,7 +206,7 @@ async def compare_regions(request: ComparisonRequest, user: Dict[str, Any] = Dep
     cache_key = None
     if llm_cfg:
         cache_key = make_cache_key(
-            "compare", [request.metric] + sorted(request.regions), request.user_profile, llm_cfg, f"{rag.data_version}:{market_data.stamp()}"
+            "compare", [request.metric] + sorted(request.regions), request.user_profile, llm_cfg, f"{rag.data_version}:{market_data.stamp()}:{rag.retrieval_tag}"
         )
         saved = store.cache_get(cache_key)
         if saved:
@@ -251,6 +251,11 @@ async def cache_info(user: Dict[str, Any] = Depends(admin_user)):
 @app.delete("/api/admin/cache")
 async def clear_cache(user: Dict[str, Any] = Depends(admin_user)):
     return {"cleared": store.cache_clear()}
+
+
+@app.get("/api/admin/retrieval")
+async def retrieval_status(user: Dict[str, Any] = Depends(admin_user)):
+    return require_rag().retrieval_status()
 
 
 @app.get("/api/admin/market-data")

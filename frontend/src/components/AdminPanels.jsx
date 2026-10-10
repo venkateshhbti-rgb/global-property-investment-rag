@@ -296,3 +296,56 @@ export function LiveDataPanel({ token }) {
     </div>
   )
 }
+
+const MODE_LABELS = {
+  'hybrid+rerank': 'Hybrid (keyword + semantic) with reranker',
+  hybrid: 'Hybrid (keyword + semantic)',
+  'keyword+rerank': 'Keyword search with reranker (semantic index still building)',
+  keyword: 'Keyword search only'
+}
+
+export function RetrievalPanel({ token }) {
+  const [status, setStatus] = useState(null)
+
+  useEffect(() => {
+    let timer
+    const poll = async () => {
+      try {
+        const data = await api('/api/admin/retrieval', { token })
+        setStatus(data)
+        timer = setTimeout(poll, data.ready || data.error ? 30000 : 5000)
+      } catch {
+        timer = setTimeout(poll, 10000)
+      }
+    }
+    poll()
+    return () => clearTimeout(timer)
+  }, [token])
+
+  if (!status) return null
+  const pctDone = status.total ? Math.round((status.embedded / status.total) * 100) : 0
+
+  return (
+    <div className="admin-panel">
+      <h3>Retrieval Quality</h3>
+      <p className="panel-hint">
+        How the bot finds passages in your documents. Semantic embeddings are built in the background and saved, so a
+        restart or interruption resumes where it stopped and unchanged documents are never embedded again.
+      </p>
+      <div className="table-wrap">
+        <table className="admin-table">
+          <tbody>
+            <tr><td>Mode</td><td><span className={`pill ${status.mode.startsWith('hybrid') ? 'on' : 'off'}`}>{MODE_LABELS[status.mode] || status.mode}</span></td></tr>
+            <tr><td>Embeddings</td><td>{status.provider || 'not configured'}</td></tr>
+            <tr><td>Indexed passages</td><td>{(status.embedded || 0).toLocaleString()} / {(status.total || 0).toLocaleString()} ({pctDone}%)</td></tr>
+            <tr><td>Reranker</td><td>{status.reranker}</td></tr>
+          </tbody>
+        </table>
+      </div>
+      {!status.ready && !status.error && status.provider && (
+        <div className="panel-notice success">Building semantic index in the background. Answers keep working and improve when it finishes.</div>
+      )}
+      {status.error && <div className="panel-notice error">{status.error}</div>}
+    </div>
+  )
+}

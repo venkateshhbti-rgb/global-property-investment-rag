@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Settings, RefreshCw, Database, FileText, CheckCircle } from 'lucide-react'
 import { api } from '../api.jsx'
-import { LlmPanel, UsersPanel, LiveDataPanel } from './AdminPanels'
+import { LlmPanel, UsersPanel, LiveDataPanel, RetrievalPanel } from './AdminPanels'
 import './SystemStatus.css'
 
 function SystemStatus({ token, currentUser, systemStats, onReload, onLlmsChanged }) {
@@ -157,6 +157,7 @@ function SystemStatus({ token, currentUser, systemStats, onReload, onLlmsChanged
         )}
       </div>
 
+      <RetrievalPanel token={token} />
       <LiveDataPanel token={token} />
       <LlmPanel token={token} onChanged={onLlmsChanged} />
       <UsersPanel token={token} currentUser={currentUser} />
