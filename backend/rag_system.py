@@ -55,7 +55,7 @@ FULL ANALYSIS FORMAT (about 200 words, never more than 220, specific figures fro
 **4. Cost of Capital** (buying, holding, selling costs)
 **5. Risk Flags**
 **Bottom line**
-Write 2-3 sentences tailored to the USER PROFILE and the user's answers, say what to verify next, and note this is indicative and needs a licensed advisor review."""
+Write 2-3 sentences that explicitly name the user's budget, investor type and risk profile and say how each shapes the recommendation, then say what to verify next, and note this is indicative and needs a licensed advisor review."""
 
 COMPARE_FORMAT = """TASK: compare the requested metric across the requested regions using only the CONTEXT.
 FORMAT (150 words max, no filler):
@@ -299,6 +299,47 @@ class PropertyInvestmentRAG:
         return questions
 
     @staticmethod
+    def _profile_summary(profile: Optional[Dict[str, Any]]) -> str:
+        if not profile:
+            return ""
+        labels = {"individual": "individual investor", "wealth_advisor": "wealth advisor", "relocation": "relocation firm"}
+        bits = []
+        if profile.get("budget"):
+            bits.append(f"${float(profile['budget']):,.0f} budget")
+        if profile.get("type") in labels:
+            bits.append(labels[profile["type"]])
+        if profile.get("risk_profile"):
+            bits.append(f"{profile['risk_profile']} risk")
+        return " (" + ", ".join(bits) + ")" if bits else ""
+
+    def _market_gate(self, user_turns: List[str], profile: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """Always ask which market first when none has been named, instead of leaving it to the model.
+        Without a market the search spans every city and returns unrelated pages."""
+        if len(self.regions) < 2:
+            return None
+        text = " ".join(user_turns)
+        low = text.lower()
+        if self._mentioned_regions(text) or re.search(r"compare several|all markets|all cities|all of them|no preference|any market", low):
+            return None
+
+        questions = [{"question": "Which city are you considering for property investment?",
+                      "options": self.regions[:6] + ["Compare several"]}]
+        if re.search(r"\b(where|which|best|recommend|should i|invest)", low):
+            known = self._known_facts(text)
+            if "property type" not in known:
+                questions.append({"question": "What property type are you interested in?", "options": ["Residential", "Commercial"]})
+            if "holding period" not in known:
+                questions.append({"question": "What is your holding period?", "options": ["Under 3 years", "3-7 years", "7+ years"]})
+            if "goal" not in known and len(questions) < 3:
+                questions.append({"question": "What is your main goal?", "options": ["Rental income", "Capital growth", "Balanced"]})
+        questions = questions[:3]
+        numbered = "\n".join(f"{i}. {q['question']}" for i, q in enumerate(questions, 1))
+        return {
+            "answer": f"To tailor this to you{self._profile_summary(profile)}, I need a few details:\n{numbered}",
+            "sources": [], "success": True, "usage": None, "llm": None, "clarifying_questions": questions,
+        }
+
+    @staticmethod
     def _questions_from_text(answer: str) -> Optional[List[Dict[str, Any]]]:
         """The model sometimes asks in plain sentences instead of the CLARIFY format. Treat a short,
         question-only reply as clarifying questions so the user still gets the answer form."""
@@ -310,15 +351,23 @@ class PropertyInvestmentRAG:
 
     @staticmethod
     def _drop_known(questions: List[Dict[str, Any]], known: str) -> List[Dict[str, Any]]:
-        """Remove questions about details the user has already given."""
+        """Keep only questions about market, property type, holding period or goal that the user has not already
+        answered. Anything else is a question the model invented, so it is dropped."""
         topics = {
             "target market": r"market|city|country|location|where",
             "holding period": r"holding|hold|how long|period|horizon|years",
             "property type": r"property type|type of property|residential|commercial",
             "goal": r"goal|objective|priority|income|growth",
         }
-        patterns = [pat for name, pat in topics.items() if name in known]
-        return [q for q in questions if not any(re.search(p, q["question"], re.I) for p in patterns)]
+        known_patterns = [pat for name, pat in topics.items() if name in known]
+
+        def keep(q: Dict[str, Any]) -> bool:
+            text = q["question"]
+            if not any(re.search(p, text, re.I) for p in topics.values()):
+                return False
+            return not any(re.search(p, text, re.I) for p in known_patterns)
+
+        return [q for q in questions if keep(q)]
 
     # ---------- generation ----------
     def _generate(self, system: str, messages: List[Dict[str, str]], docs: List[Document],
@@ -343,6 +392,10 @@ class PropertyInvestmentRAG:
         if not self.split_documents:
             return {"answer": "No documents loaded. Please ensure property data exists.",
                     "sources": [], "success": False, "usage": None, "llm": None}
+
+        gate = self._market_gate([m["content"] for m in messages if m["role"] == "user"], profile)
+        if gate:
+            return gate
 
         recent = messages[-8:]
         user_turns = [m["content"] for m in recent if m["role"] == "user"]
