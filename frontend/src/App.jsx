@@ -177,7 +177,10 @@ function App() {
       </div>
 
       <footer className="app-footer">
-        <p>Property Investment RAG Consultant © 2024 | Global real estate markets: {regionNames.length ? regionNames.join(', ') : 'no data loaded'}</p>
+        <p title={regionNames.join(', ')}>
+          Property Investment RAG Consultant © {new Date().getFullYear()} | Global real estate analysis
+          {regionNames.length > 0 && ` | ${regionNames.length} ${regionNames.length === 1 ? 'market' : 'markets'} loaded`}
+        </p>
       </footer>
     </div>
   )
