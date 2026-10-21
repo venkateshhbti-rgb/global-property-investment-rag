@@ -4,8 +4,8 @@ import time
 from typing import Any, Dict, List, Optional
 
 import numpy as np
-from langchain.schema import Document
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_core.documents import Document
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from config import settings
 from document_loader import PropertyDocumentLoader
@@ -134,7 +134,8 @@ class PropertyInvestmentRAG:
         if provider == "openai" or (provider == "auto" and key):
             if not key:
                 return None
-            return lambda: OpenAIEmbedder(key, settings.EMBEDDING_MODEL, settings.EMBEDDING_DIMENSIONS)
+            current_key = lambda: store.openai_key() or settings.OPENAI_API_KEY
+            return lambda: OpenAIEmbedder(current_key, settings.EMBEDDING_MODEL, settings.EMBEDDING_DIMENSIONS)
         return lambda: LocalEmbedder(settings.LOCAL_EMBEDDING_MODEL, settings.MODELS_DIR)
 
     @staticmethod

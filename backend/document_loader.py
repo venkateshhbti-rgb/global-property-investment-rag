@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import List, Dict, Any
 import PyPDF2
 import pandas as pd
-from langchain.schema import Document
+from langchain_core.documents import Document
 from config import settings
 
 class PropertyDocumentLoader:

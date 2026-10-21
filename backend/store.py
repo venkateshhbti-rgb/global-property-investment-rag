@@ -13,6 +13,7 @@ from config import settings
 
 _lock = threading.RLock()
 TOKEN_TTL_SECONDS = 7 * 24 * 3600
+MIN_PASSWORD = 8
 CACHE_VERSION = "v11"  # bump when prompts change so old saved answers are not reused
 CACHE_MAX_ENTRIES = 500
 
@@ -78,8 +79,8 @@ class Store:
     def add_user(self, username: str, password: str, role: str = "user") -> Dict[str, Any]:
         username = username.strip()
         with _lock:
-            if not username or len(password) < 6:
-                raise ValueError("Username required and password must be at least 6 characters")
+            if not username or len(password) < MIN_PASSWORD:
+                raise ValueError(f"Username required and password must be at least {MIN_PASSWORD} characters")
             if role not in ("admin", "user"):
                 raise ValueError("Role must be 'admin' or 'user'")
             if username.lower() in {u.lower() for u in self.data["users"]}:
@@ -136,6 +137,33 @@ class Store:
                 return None
             return self.public_user(s["username"])
 
+    def change_password(self, username: str, current: str, new: str, keep_token: Optional[str] = None):
+        """Self-service change. Needs the current password; other sessions of this user are signed out."""
+        with _lock:
+            u = self.data["users"].get(username)
+            if not u or not _verify_password(current, u["salt"], u["hash"]):
+                raise ValueError("Current password is incorrect")
+            self._apply_password(username, new, keep_token)
+
+    def reset_password(self, username: str, new: str):
+        """Admin reset. Signs the user out everywhere."""
+        with _lock:
+            if username not in self.data["users"]:
+                raise ValueError("User not found")
+            self._apply_password(username, new, None)
+
+    def _apply_password(self, username: str, new: str, keep_token: Optional[str]):
+        if len(new) < MIN_PASSWORD:
+            raise ValueError(f"New password must be at least {MIN_PASSWORD} characters")
+        u = self.data["users"][username]
+        if _verify_password(new, u["salt"], u["hash"]):
+            raise ValueError("New password must be different from the current one")
+        u.update(_hash_password(new))
+        self.data["sessions"] = {
+            t: s for t, s in self.data["sessions"].items() if s["username"] != username or t == keep_token
+        }
+        self._save()
+
     def logout(self, token: str):
         with _lock:
             if self.data["sessions"].pop(token, None):
@@ -187,6 +215,17 @@ class Store:
             if not llm:
                 raise ValueError("LLM not found")
             llm["enabled"] = enabled
+            self._save()
+
+    def set_llm_key(self, llm_id: str, api_key: str):
+        api_key = api_key.strip()
+        if not api_key:
+            raise ValueError("API key is required")
+        with _lock:
+            llm = next((l for l in self.data["llms"] if l["id"] == llm_id), None)
+            if not llm:
+                raise ValueError("LLM not found")
+            llm["api_key"] = api_key
             self._save()
 
     def openai_key(self) -> str:

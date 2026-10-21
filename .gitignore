@@ -69,3 +69,8 @@ backend/market_cache.json
 backend/market_cache.json.tmp
 backend/models/
 backend/embeddings/
+
+# Streamlit app
+streamlit_app/.venv/
+streamlit_app/.state/
+streamlit_app/.streamlit/secrets.toml

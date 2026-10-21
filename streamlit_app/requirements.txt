@@ -1,0 +1,12 @@
+streamlit>=1.57
+requests
+numpy
+pandas
+scikit-learn
+PyPDF2
+python-dotenv
+pydantic>=2
+pydantic-settings
+langchain-core
+langchain-text-splitters
+fastembed==0.9.0

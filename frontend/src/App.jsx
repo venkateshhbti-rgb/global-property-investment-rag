@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { BarChart3, MessageSquare, Settings, LogOut, Coins } from 'lucide-react'
+import { BarChart3, MessageSquare, Settings, LogOut, Coins, Key } from 'lucide-react'
 import ChatConsultant from './components/ChatConsultant'
 import ComparisonTool from './components/ComparisonTool'
 import SystemStatus from './components/SystemStatus'
 import Login from './components/Login'
+import ChangePassword from './components/ChangePassword'
 import { api, setUnauthorizedHandler, formatTokens } from './api.jsx'
 import './App.css'
 
@@ -24,6 +25,7 @@ function App() {
   const [activeTab, setActiveTab] = useState('chat')
   const [systemStats, setSystemStats] = useState(null)
   const [error, setError] = useState(null)
+  const [showPassword, setShowPassword] = useState(false)
   const [usage, setUsage] = useState({ total_tokens: 0 })
   const [llms, setLlms] = useState([])
   const [llmId, setLlmId] = useState(() => load('llmId', ''))
@@ -112,6 +114,9 @@ function App() {
               </select>
             )}
             <span className="user-badge">{user.username}{isAdmin ? ' (admin)' : ''}</span>
+            <button className="logout-button" onClick={() => setShowPassword(true)} title="Change your password">
+              <Key size={16} /> Password
+            </button>
             <button className="logout-button" onClick={logout} title="Sign out">
               <LogOut size={16} /> Sign out
             </button>
@@ -175,6 +180,8 @@ function App() {
           )}
         </main>
       </div>
+
+      {showPassword && <ChangePassword token={token} onClose={() => setShowPassword(false)} />}
 
       <footer className="app-footer">
         <p title={regionNames.join(', ')}>

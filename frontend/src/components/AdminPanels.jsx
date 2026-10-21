@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Plus, Trash2, PlugZap, Power, Pencil, RefreshCw } from 'lucide-react'
+import { Plus, Trash2, PlugZap, Power, Pencil, RefreshCw, Key } from 'lucide-react'
 import { api, formatTokens } from '../api.jsx'
 import './AdminPanels.css'
 
@@ -14,6 +14,7 @@ export function LlmPanel({ token, onChanged }) {
   const [form, setForm] = useState({ name: '', provider: 'openai', model: PROVIDERS.openai.model, api_key: '', base_url: '' })
   const [notice, setNotice] = useState(null)
   const [busy, setBusy] = useState(false)
+  const [keyEdit, setKeyEdit] = useState(null)
 
   const load = useCallback(async () => {
     try {
@@ -76,6 +77,9 @@ export function LlmPanel({ token, onChanged }) {
                   <td>{formatTokens(l.usage.total_tokens)} <span className="muted">({l.usage.requests} req)</span></td>
                   <td><span className={`pill ${l.enabled ? 'on' : 'off'}`}>{l.enabled ? 'Enabled' : 'Disabled'}</span></td>
                   <td className="row-actions">
+                    <button disabled={busy} title="Replace API key" onClick={() => setKeyEdit({ id: l.id, name: l.name, value: '' })}>
+                      <Key size={15} />
+                    </button>
                     <button disabled={busy} title="Change model (same API key)"
                       onClick={() => {
                         const model = window.prompt(`Model for ${l.name}
@@ -110,6 +114,31 @@ Examples: gpt-4o-mini, gpt-4o, gpt-4.1, gpt-4.1-mini`, l.model)
         </div>
       )}
 
+      {keyEdit && (
+        <form
+          className="admin-form"
+          onSubmit={(e) => {
+            e.preventDefault()
+            run(async () => {
+              await api(`/api/admin/llms/${keyEdit.id}`, { method: 'PATCH', token, body: { api_key: keyEdit.value } })
+              setKeyEdit(null)
+              return api(`/api/admin/llms/${keyEdit.id}/test`, { method: 'POST', token })
+            }, 'API key updated')
+          }}
+        >
+          <input
+            type="password"
+            autoComplete="off"
+            placeholder={`New API key for ${keyEdit.name}`}
+            value={keyEdit.value}
+            onChange={(e) => setKeyEdit({ ...keyEdit, value: e.target.value })}
+            autoFocus
+          />
+          <button type="submit" disabled={busy || !keyEdit.value.trim()}>Save and test</button>
+          <button type="button" onClick={() => setKeyEdit(null)}>Cancel</button>
+        </form>
+      )}
+
       <form className="admin-form" onSubmit={handleAdd}>
         <input placeholder="Display name (e.g. GPT-4o mini)" value={form.name} onChange={(e) => setField('name', e.target.value)} />
         <select value={form.provider} onChange={(e) => handleProviderChange(e.target.value)}>
@@ -133,6 +162,7 @@ Examples: gpt-4o-mini, gpt-4o, gpt-4.1, gpt-4.1-mini`, l.model)
 export function UsersPanel({ token, currentUser }) {
   const [users, setUsers] = useState([])
   const [form, setForm] = useState({ username: '', password: '', role: 'user' })
+  const [pwEdit, setPwEdit] = useState(null)
   const [notice, setNotice] = useState(null)
   const [busy, setBusy] = useState(false)
 
@@ -171,7 +201,7 @@ export function UsersPanel({ token, currentUser }) {
   return (
     <div className="admin-panel">
       <h3>Users</h3>
-      <p className="panel-hint">Only admins can see the Status tab. Passwords need at least 6 characters.</p>
+      <p className="panel-hint">Only admins can see the Status tab. Passwords need at least 8 characters.</p>
 
       <div className="table-wrap">
         <table className="admin-table">
@@ -186,6 +216,9 @@ export function UsersPanel({ token, currentUser }) {
                 <td>{formatTokens(u.usage.total_tokens)}</td>
                 <td>{u.usage.requests}</td>
                 <td className="row-actions">
+                  <button title="Reset password" disabled={busy} onClick={() => setPwEdit({ username: u.username, value: '' })}>
+                    <Key size={15} />
+                  </button>
                   <button className="danger" title="Delete user"
                     disabled={busy || u.username === currentUser.username}
                     onClick={() => window.confirm(`Delete user ${u.username}?`) && run(() => api(`/api/admin/users/${encodeURIComponent(u.username)}`, { method: 'DELETE', token }), 'User deleted')}>
@@ -198,14 +231,40 @@ export function UsersPanel({ token, currentUser }) {
         </table>
       </div>
 
+      {pwEdit && (
+        <form
+          className="admin-form"
+          onSubmit={(e) => {
+            e.preventDefault()
+            run(async () => {
+              await api(`/api/admin/users/${encodeURIComponent(pwEdit.username)}/password`, {
+                method: 'POST', token, body: { new_password: pwEdit.value }
+              })
+              setPwEdit(null)
+            }, `Password reset for ${pwEdit.username}. They are signed out everywhere.`)
+          }}
+        >
+          <input
+            type="password"
+            autoComplete="new-password"
+            placeholder={`New password for ${pwEdit.username} (min 8 chars)`}
+            value={pwEdit.value}
+            onChange={(e) => setPwEdit({ ...pwEdit, value: e.target.value })}
+            autoFocus
+          />
+          <button type="submit" disabled={busy || pwEdit.value.length < 8}>Reset password</button>
+          <button type="button" onClick={() => setPwEdit(null)}>Cancel</button>
+        </form>
+      )}
+
       <form className="admin-form" onSubmit={handleAdd}>
         <input placeholder="Username" value={form.username} autoComplete="off" onChange={(e) => setForm({ ...form, username: e.target.value })} />
-        <input type="password" placeholder="Password (min 6 chars)" value={form.password} autoComplete="new-password" onChange={(e) => setForm({ ...form, password: e.target.value })} />
+        <input type="password" placeholder="Password (min 8 chars)" value={form.password} autoComplete="new-password" onChange={(e) => setForm({ ...form, password: e.target.value })} />
         <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
           <option value="user">User</option>
           <option value="admin">Admin</option>
         </select>
-        <button type="submit" disabled={busy || !form.username || form.password.length < 6}>
+        <button type="submit" disabled={busy || !form.username || form.password.length < 8}>
           <Plus size={16} /> Add user
         </button>
       </form>
@@ -346,6 +405,7 @@ export function RetrievalPanel({ token }) {
         <div className="panel-notice success">Building semantic index in the background. Answers keep working and improve when it finishes.</div>
       )}
       {status.error && <div className="panel-notice error">{status.error}</div>}
+      {status.query_error && <div className="panel-notice error">{status.query_error}. Check the API key under LLM Providers.</div>}
     </div>
   )
 }

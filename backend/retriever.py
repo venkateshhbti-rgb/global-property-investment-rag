@@ -14,7 +14,7 @@ import os
 import threading
 import time
 from collections import Counter
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import numpy as np
 import requests
@@ -52,8 +52,10 @@ class LocalEmbedder:
 class OpenAIEmbedder:
     """OpenAI embeddings over plain HTTP, with backoff on rate limits."""
 
-    def __init__(self, api_key: str, model: str, dimensions: int):
-        self.api_key, self.model, self.dimensions = api_key, model, dimensions
+    def __init__(self, api_key: Union[str, Callable[[], str]], model: str, dimensions: int):
+        # A callable is read on every request, so a key replaced in the Status tab takes effect immediately.
+        self._key = api_key if callable(api_key) else (lambda: api_key)
+        self.model, self.dimensions = model, dimensions
         self.tag = f"openai_{model}_{dimensions}"
 
     def _call(self, texts: List[str]) -> np.ndarray:
@@ -63,7 +65,7 @@ class OpenAIEmbedder:
         for attempt in range(8):
             try:
                 resp = requests.post("https://api.openai.com/v1/embeddings", json=payload, timeout=60,
-                                     headers={"Authorization": f"Bearer {self.api_key}"})
+                                     headers={"Authorization": f"Bearer {self._key()}"})
             except requests.RequestException:
                 time.sleep(min(2 ** attempt, 30))
                 continue
@@ -208,8 +210,9 @@ class HybridRetriever:
             try:
                 q = self.embedder.embed_query(query)
                 lists.append(self._top(self.vecs @ q, idx, CANDIDATES, False))
-            except Exception:
-                pass
+                self.status["query_error"] = None
+            except Exception as e:
+                self.status["query_error"] = f"Semantic search is off because embedding the question failed: {e}"
 
         fused: Dict[int, float] = {}
         for ranking in lists:

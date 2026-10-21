@@ -83,6 +83,15 @@ class ComparisonRequest(BaseModel):
     llm_id: Optional[str] = None
 
 
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str
+
+
+class PasswordReset(BaseModel):
+    new_password: str
+
+
 class NewUser(BaseModel):
     username: str
     password: str
@@ -100,6 +109,7 @@ class NewLLM(BaseModel):
 class LLMUpdate(BaseModel):
     enabled: Optional[bool] = None
     model: Optional[str] = None
+    api_key: Optional[str] = None
 
 
 # ==================== Public ====================
@@ -122,6 +132,17 @@ async def login(req: LoginRequest):
 @app.get("/api/auth/me")
 async def me(user: Dict[str, Any] = Depends(current_user)):
     return {"user": user, "usage": store.user_usage(user["username"])}
+
+
+@app.post("/api/auth/change-password")
+async def change_password(req: PasswordChange, authorization: Optional[str] = Header(None),
+                          user: Dict[str, Any] = Depends(current_user)):
+    token = authorization[7:] if authorization and authorization.startswith("Bearer ") else None
+    try:
+        store.change_password(user["username"], req.current_password, req.new_password, keep_token=token)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"status": "ok"}
 
 
 @app.post("/api/auth/logout")
@@ -284,6 +305,15 @@ async def create_user(req: NewUser, user: Dict[str, Any] = Depends(admin_user)):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@app.post("/api/admin/users/{username}/password")
+async def reset_user_password(username: str, req: PasswordReset, user: Dict[str, Any] = Depends(admin_user)):
+    try:
+        store.reset_password(username, req.new_password)
+    except ValueError as e:
+        raise HTTPException(status_code=400 if "least" in str(e) or "different" in str(e) else 404, detail=str(e))
+    return {"status": "ok"}
+
+
 @app.delete("/api/admin/users/{username}")
 async def remove_user(username: str, user: Dict[str, Any] = Depends(admin_user)):
     if username == user["username"]:
@@ -315,6 +345,8 @@ async def update_llm(llm_id: str, req: LLMUpdate, user: Dict[str, Any] = Depends
             store.set_llm_enabled(llm_id, req.enabled)
         if req.model is not None:
             store.set_llm_model(llm_id, req.model)
+        if req.api_key is not None:
+            store.set_llm_key(llm_id, req.api_key)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     return {"status": "ok"}
