@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Send, MessageCircle, Copy, Check } from 'lucide-react'
 import { api, formatTokens, renderInline } from '../api.jsx'
 import './ChatConsultant.css'
@@ -27,6 +27,7 @@ function QuestionForm({ questions, onSubmit }) {
                   type="button"
                   key={opt}
                   className={`option-chip ${answers[i] === opt ? 'selected' : ''}`}
+                  aria-pressed={answers[i] === opt}
                   onClick={() => setAnswer(i, opt)}
                 >
                   {opt}
@@ -36,7 +37,7 @@ function QuestionForm({ questions, onSubmit }) {
           )}
           <input
             type="text"
-            className="question-input"
+            aria-label={q.question} className="question-input"
             value={answers[i]}
             onChange={(e) => setAnswer(i, e.target.value)}
             placeholder="Pick an option or type your own answer"
@@ -128,6 +129,7 @@ function ChatConsultant({ token, llmId, profile: userProfile, onProfileChange, o
         id: messageIdRef.current++,
         role: 'assistant',
         content: `Error: ${error.message}`,
+        failed: true,
         sources: []
       }
       setMessages(prev => [...prev, errorMessage])
@@ -144,9 +146,10 @@ function ChatConsultant({ token, llmId, profile: userProfile, onProfileChange, o
 
   return (
     <div className="chat-consultant">
-      <div className="chat-messages">
+      <div className="chat-heading"><h2>Investment workspace</h2><p>Explore markets. Compare opportunities. Follow the evidence.</p></div>
+      <div className="chat-messages" role="log" aria-label="Conversation" aria-live="polite">
         {messages.map(msg => (
-          <div key={msg.id} className={`message message-${msg.role}`}>
+          <div key={msg.id} className={`message message-${msg.role} ${msg.failed ? 'message-failed' : ''}`}>
             <div className="message-avatar">
               {msg.role === 'user' ? 'You' : <MessageCircle size={20} />}
             </div>
@@ -182,7 +185,7 @@ function ChatConsultant({ token, llmId, profile: userProfile, onProfileChange, o
               <button
                 className="copy-button"
                 onClick={() => copyToClipboard(msg.content, msg.id)}
-                title="Copy message"
+                aria-label={copiedId === msg.id ? 'Message copied' : 'Copy message'} title="Copy message"
               >
                 {copiedId === msg.id ? (
                   <Check size={16} />
@@ -198,11 +201,14 @@ function ChatConsultant({ token, llmId, profile: userProfile, onProfileChange, o
             <div className="message-avatar">
               <MessageCircle size={20} />
             </div>
-            <div className="typing-indicator">
+            <div className="typing-indicator" role="status" aria-label="Reviewing sources and preparing your answer">
               <span></span><span></span><span></span>
             </div>
           </div>
         )}
+        {messages.length === 1 && <div className="starter-prompts" aria-label="Suggested questions">
+          {['Compare rental yields across available markets', 'What costs should I consider when buying a property?'].map(prompt => <button key={prompt} type="button" onClick={() => sendText(prompt)}>{prompt}</button>)}
+        </div>}
         <div ref={messagesEndRef} />
       </div>
 
@@ -210,16 +216,16 @@ function ChatConsultant({ token, llmId, profile: userProfile, onProfileChange, o
         <button
           className="profile-toggle"
           onClick={() => setShowProfile(!showProfile)}
-          title="Toggle investor profile"
+          aria-expanded={showProfile} aria-controls="investor-profile" title="Toggle investor profile"
         >
-          {showProfile ? '✕' : '⚙'} Profile
+          {showProfile ? 'Hide investor profile' : 'Investor profile'}
         </button>
 
         {showProfile && (
-          <div className="profile-panel">
+          <div id="investor-profile" className="profile-panel">
             <div className="profile-field">
-              <label>Budget (USD)</label>
-              <input
+              <label htmlFor="chatconsultant-field-1">Budget (USD)</label>
+              <input id="chatconsultant-field-1"
                 type="number"
                 value={userProfile.budget || ''}
                 onChange={(e) => handleProfileUpdate('budget', e.target.value ? parseInt(e.target.value) : null)}
@@ -227,8 +233,8 @@ function ChatConsultant({ token, llmId, profile: userProfile, onProfileChange, o
               />
             </div>
             <div className="profile-field">
-              <label>Investor Type</label>
-              <select
+              <label htmlFor="chatconsultant-field-2">Investor Type</label>
+              <select id="chatconsultant-field-2"
                 value={userProfile.type}
                 onChange={(e) => handleProfileUpdate('type', e.target.value)}
               >
@@ -238,8 +244,8 @@ function ChatConsultant({ token, llmId, profile: userProfile, onProfileChange, o
               </select>
             </div>
             <div className="profile-field">
-              <label>Risk Profile</label>
-              <select
+              <label htmlFor="chatconsultant-field-3">Risk Profile</label>
+              <select id="chatconsultant-field-3"
                 value={userProfile.risk_profile}
                 onChange={(e) => handleProfileUpdate('risk_profile', e.target.value)}
               >
@@ -258,9 +264,9 @@ function ChatConsultant({ token, llmId, profile: userProfile, onProfileChange, o
             onChange={(e) => setInput(e.target.value)}
             placeholder={hasLlm ? "Ask about property markets, or answer the questions above..." : "No LLM configured - ask an admin to add one (showing excerpts only)"}
             disabled={loading}
-            className="chat-input"
+            aria-label="Your property investment question" className="chat-input"
           />
-          <button type="submit" disabled={loading || !input.trim()} className="send-button">
+          <button type="submit" disabled={loading || !input.trim()} aria-label="Send message" className="send-button">
             <Send size={20} />
           </button>
         </form>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { BarChart3, Search } from 'lucide-react'
 import { api, formatTokens, renderInline } from '../api.jsx'
 import './ComparisonTool.css'
@@ -80,9 +80,10 @@ function ComparisonTool({ token, llmId, profile, systemStats, onUsage }) {
 
       <div className="comparison-controls">
         <div className="control-group">
-          <label>Metric to Compare:</label>
+          <label htmlFor="comparison-metric">Metric to compare</label>
           <div className="metric-input">
             <input
+              id="comparison-metric"
               type="text"
               value={metric}
               onChange={(e) => setMetric(e.target.value)}
@@ -94,6 +95,7 @@ function ComparisonTool({ token, llmId, profile, systemStats, onUsage }) {
               <button
                 key={m}
                 className={`suggestion-chip ${metric === m ? 'active' : ''}`}
+                aria-pressed={metric === m}
                 onClick={() => setMetric(m)}
               >
                 {m}
@@ -102,14 +104,14 @@ function ComparisonTool({ token, llmId, profile, systemStats, onUsage }) {
           </div>
         </div>
 
-        <div className="control-group">
-          <label>Select Markets (cities / countries):</label>
+        <fieldset className="control-group">
+          <legend className="mb-3 text-sm font-medium text-slate-700">Select markets (cities / countries)</legend>
           <div className="region-grid">
+            {availableRegions.length === 0 && <p className="panel-empty">{systemStats ? 'No markets loaded. Ask an admin to add documents.' : 'Loading available markets...'}</p>}
             {availableRegions.map(region => (
-              <button
+              <label
                 key={region}
                 className={`region-checkbox ${selectedRegions.includes(region) ? 'selected' : ''}`}
-                onClick={() => toggleRegion(region)}
               >
                 <input
                   type="checkbox"
@@ -118,10 +120,10 @@ function ComparisonTool({ token, llmId, profile, systemStats, onUsage }) {
                   aria-label={region}
                 />
                 <span>{region}</span>
-              </button>
+              </label>
             ))}
           </div>
-        </div>
+        </fieldset>
 
         <button
           className="compare-button"
@@ -134,10 +136,12 @@ function ComparisonTool({ token, llmId, profile, systemStats, onUsage }) {
       </div>
 
       {error && (
-        <div className="error-box">
+        <div className="error-box" role="alert">
           <p>{error}</p>
         </div>
       )}
+
+      {loading && <div className="loading-container" role="status"><div className="spinner" aria-hidden="true" /><p>Comparing markets and reviewing sources...</p></div>}
 
       {result && (
         <div className="comparison-result">

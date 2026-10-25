@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import { LogIn } from 'lucide-react'
 import { api } from '../api.jsx'
 import './Login.css'
@@ -29,13 +29,13 @@ function Login({ onLogin }) {
         <h1>Property Investment Consultant</h1>
         <p>Sign in to continue</p>
 
-        <label>Username</label>
-        <input value={username} onChange={(e) => setUsername(e.target.value)} autoFocus autoComplete="username" />
+        <label htmlFor="login-field-1">Username</label>
+        <input id="login-field-1" value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" />
 
-        <label>Password</label>
-        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
+        <label htmlFor="login-field-2">Password</label>
+        <input id="login-field-2" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
 
-        {error && <div className="login-error">{error}</div>}
+        {error && <div className="login-error" role="alert">{error}</div>}
 
         <button type="submit" disabled={loading || !username || !password}>
           <LogIn size={18} /> {loading ? 'Signing in...' : 'Sign in'}

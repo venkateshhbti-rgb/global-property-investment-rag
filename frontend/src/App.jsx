@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { BarChart3, MessageSquare, Settings, LogOut, Coins, Key } from 'lucide-react'
 import ChatConsultant from './components/ChatConsultant'
 import ComparisonTool from './components/ComparisonTool'
@@ -96,6 +96,7 @@ function App() {
 
   return (
     <div className="app">
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:bg-white focus:p-4">Skip to content</a>
       <header className="app-header">
         <div className="header-content">
           <div className="header-title">
@@ -107,7 +108,7 @@ function App() {
               <Coins size={16} /> {formatTokens(usage.total_tokens)} tokens
             </div>
             {llms.length > 0 && (
-              <select className="llm-select" value={llmId} onChange={(e) => setLlmId(e.target.value)} title="Model">
+              <select className="llm-select" value={llmId} onChange={(e) => setLlmId(e.target.value)} aria-label="Language model" title="Model">
                 {llms.map((l) => (
                   <option key={l.id} value={l.id}>{l.name} ({l.model})</option>
                 ))}
@@ -125,12 +126,13 @@ function App() {
       </header>
 
       <div className="app-container">
-        <nav className="app-nav">
+        <nav className="app-nav" aria-label="Main navigation">
           {tabs.map(({ id, label, icon: Icon, title }) => (
             <button
               key={id}
               className={`nav-button ${activeTab === id ? 'active' : ''}`}
               onClick={() => setActiveTab(id)}
+              aria-current={activeTab === id ? 'page' : undefined}
               title={title}
             >
               <Icon size={20} />
@@ -139,9 +141,9 @@ function App() {
           ))}
         </nav>
 
-        <main className="app-main">
+        <main id="main-content" className="app-main">
           {error && (
-            <div className="error-banner">
+            <div className="error-banner" role="alert">
               <p>{error}</p>
             </div>
           )}

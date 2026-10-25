@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { Settings, RefreshCw, Database, FileText, CheckCircle } from 'lucide-react'
 import { api } from '../api.jsx'
 import { LlmPanel, UsersPanel, LiveDataPanel, RetrievalPanel } from './AdminPanels'
@@ -43,7 +43,7 @@ function SystemStatus({ token, currentUser, systemStats, onReload, onLlmsChanged
     }
   }
 
-  const totalSize = (systemStats?.total_characters / (1024 * 1024)).toFixed(2)
+  const totalSize = ((systemStats?.total_characters || 0) / (1024 * 1024)).toFixed(2)
 
   return (
     <div className="system-status">

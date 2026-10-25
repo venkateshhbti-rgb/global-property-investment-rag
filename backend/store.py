@@ -72,8 +72,33 @@ class Store:
                 else:
                     print(f"[auth] Created admin user '{settings.ADMIN_USERNAME}' with a generated password: {password}")
                     print("[auth] Save it now, it is not shown again. Or set ADMIN_PASSWORD in backend/.env before first run.")
-            if not self.data["llms"] and settings.OPENAI_API_KEY:
-                self.add_llm("OpenAI (from .env)", "openai", settings.OPENAI_MODEL, settings.OPENAI_API_KEY)
+            self._sync_env_provider()
+
+    def _sync_env_provider(self):
+        """Keep the provider created from .env in step with .env. When OPENAI_API_KEY changes, the provider gets the
+        new key on the next start. A key replaced in the Status tab takes priority and is never overwritten."""
+        env_key = (settings.OPENAI_API_KEY or "").strip()
+        if not env_key:
+            return
+        fingerprint = hashlib.sha256(env_key.encode()).hexdigest()[:16]
+
+        llm = next((l for l in self.data["llms"] if l.get("from_env") is True), None)
+        if llm is None:
+            legacy = next((l for l in self.data["llms"] if l["name"] == "OpenAI (from .env)" and "from_env" not in l), None)
+            if legacy:
+                legacy["from_env"] = True
+                llm = legacy
+        if llm is None:
+            if self.data["llms"]:
+                return
+            self.add_llm("OpenAI (from .env)", "openai", settings.OPENAI_MODEL, env_key)
+            llm = self.data["llms"][-1]
+            llm["from_env"] = True
+        if llm.get("env_key_hash") != fingerprint:
+            llm["api_key"] = env_key
+            llm["env_key_hash"] = fingerprint
+            self._save()
+            print(f"[auth] Provider '{llm['name']}' now uses the OPENAI_API_KEY from backend/.env.")
 
     # ---------- users ----------
     def add_user(self, username: str, password: str, role: str = "user") -> Dict[str, Any]:
@@ -226,6 +251,7 @@ class Store:
             if not llm:
                 raise ValueError("LLM not found")
             llm["api_key"] = api_key
+            llm["from_env"] = False  # a key set in the UI is no longer overwritten from .env
             self._save()
 
     def openai_key(self) -> str:

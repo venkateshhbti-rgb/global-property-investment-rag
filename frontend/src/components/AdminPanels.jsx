@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Plus, Trash2, PlugZap, Power, Pencil, RefreshCw, Key } from 'lucide-react'
 import { api, formatTokens } from '../api.jsx'
 import './AdminPanels.css'
@@ -129,9 +129,11 @@ Examples: gpt-4o-mini, gpt-4o, gpt-4.1, gpt-4.1-mini`, l.model)
           <input
             type="password"
             autoComplete="off"
-            placeholder={`New API key for ${keyEdit.name}`}
+            aria-label="Replacement API key" placeholder={`New API key for ${keyEdit.name}`}
             value={keyEdit.value}
             onChange={(e) => setKeyEdit({ ...keyEdit, value: e.target.value })}
+            // Focus follows the user's explicit edit action.
+            // eslint-disable-next-line jsx-a11y/no-autofocus
             autoFocus
           />
           <button type="submit" disabled={busy || !keyEdit.value.trim()}>Save and test</button>
@@ -140,21 +142,21 @@ Examples: gpt-4o-mini, gpt-4o, gpt-4.1, gpt-4.1-mini`, l.model)
       )}
 
       <form className="admin-form" onSubmit={handleAdd}>
-        <input placeholder="Display name (e.g. GPT-4o mini)" value={form.name} onChange={(e) => setField('name', e.target.value)} />
-        <select value={form.provider} onChange={(e) => handleProviderChange(e.target.value)}>
+        <input aria-label="Display name (e.g. GPT-4o mini)" placeholder="Display name (e.g. GPT-4o mini)" value={form.name} onChange={(e) => setField('name', e.target.value)} />
+        <select aria-label="LLM provider" value={form.provider} onChange={(e) => handleProviderChange(e.target.value)}>
           {Object.entries(PROVIDERS).map(([id, p]) => <option key={id} value={id}>{p.label}</option>)}
         </select>
-        <input placeholder="Model" value={form.model} onChange={(e) => setField('model', e.target.value)} />
-        <input type="password" placeholder="API key" value={form.api_key} autoComplete="off" onChange={(e) => setField('api_key', e.target.value)} />
+        <input aria-label="Model" placeholder="Model" value={form.model} onChange={(e) => setField('model', e.target.value)} />
+        <input aria-label="API key" type="password" placeholder="API key" value={form.api_key} autoComplete="off" onChange={(e) => setField('api_key', e.target.value)} />
         {form.provider === 'openai' && (
-          <input placeholder="Base URL (optional, for compatible APIs)" value={form.base_url} onChange={(e) => setField('base_url', e.target.value)} />
+          <input aria-label="Base URL (optional, for compatible APIs)" placeholder="Base URL (optional, for compatible APIs)" value={form.base_url} onChange={(e) => setField('base_url', e.target.value)} />
         )}
         <button type="submit" disabled={busy || !form.name || !form.model || !form.api_key}>
           <Plus size={16} /> Add LLM
         </button>
       </form>
 
-      {notice && <div className={`panel-notice ${notice.type}`}>{notice.text}</div>}
+      {notice && <div role="status" className={`panel-notice ${notice.type}`}>{notice.text}</div>}
     </div>
   )
 }
@@ -247,9 +249,11 @@ export function UsersPanel({ token, currentUser }) {
           <input
             type="password"
             autoComplete="new-password"
-            placeholder={`New password for ${pwEdit.username} (min 8 chars)`}
+            aria-label="Replacement password" placeholder={`New password for ${pwEdit.username} (min 8 chars)`}
             value={pwEdit.value}
             onChange={(e) => setPwEdit({ ...pwEdit, value: e.target.value })}
+            // Focus follows the user's explicit edit action.
+            // eslint-disable-next-line jsx-a11y/no-autofocus
             autoFocus
           />
           <button type="submit" disabled={busy || pwEdit.value.length < 8}>Reset password</button>
@@ -258,9 +262,9 @@ export function UsersPanel({ token, currentUser }) {
       )}
 
       <form className="admin-form" onSubmit={handleAdd}>
-        <input placeholder="Username" value={form.username} autoComplete="off" onChange={(e) => setForm({ ...form, username: e.target.value })} />
-        <input type="password" placeholder="Password (min 8 chars)" value={form.password} autoComplete="new-password" onChange={(e) => setForm({ ...form, password: e.target.value })} />
-        <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
+        <input aria-label="Username" placeholder="Username" value={form.username} autoComplete="off" onChange={(e) => setForm({ ...form, username: e.target.value })} />
+        <input aria-label="Password (min 8 chars)" type="password" placeholder="Password (min 8 chars)" value={form.password} autoComplete="new-password" onChange={(e) => setForm({ ...form, password: e.target.value })} />
+        <select aria-label="User role" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
           <option value="user">User</option>
           <option value="admin">Admin</option>
         </select>
@@ -269,7 +273,7 @@ export function UsersPanel({ token, currentUser }) {
         </button>
       </form>
 
-      {notice && <div className={`panel-notice ${notice.type}`}>{notice.text}</div>}
+      {notice && <div role="status" className={`panel-notice ${notice.type}`}>{notice.text}</div>}
     </div>
   )
 }
@@ -351,7 +355,7 @@ export function LiveDataPanel({ token }) {
           <RefreshCw size={16} /> {loading ? 'Refreshing...' : 'Refresh live data'}
         </button>
       </div>
-      {notice && <div className={`panel-notice ${notice.type}`}>{notice.text}</div>}
+      {notice && <div role="status" className={`panel-notice ${notice.type}`}>{notice.text}</div>}
     </div>
   )
 }
