@@ -384,7 +384,10 @@ class PropertyInvestmentRAG:
         try:
             answer, usage = call_llm(llm_cfg, system, messages, max_tokens=max_tokens)
         except Exception as e:
-            return {"answer": f"LLM error ({llm_cfg['name']}): {e}", "sources": sources,
+            hint = ""
+            if re.search(r"deprecated|does not exist|model_not_found|do not have access|decommissioned", str(e), re.I):
+                hint = "\n\nFix: open Status > LLM Providers and change the model with the pencil icon (for example gpt-4o-mini)."
+            return {"answer": f"LLM error ({llm_cfg['name']}): {e}{hint}", "sources": sources,
                     "success": False, "usage": None, "llm": llm_cfg["name"]}
         return {"answer": answer, "sources": sources, "success": True, "usage": usage, "llm": llm_cfg["name"]}
 

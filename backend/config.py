@@ -13,7 +13,7 @@ class Settings(BaseSettings):
 
     # OpenAI Configuration (Optional - leave empty for local mode)
     OPENAI_API_KEY: str = ""
-    OPENAI_MODEL: str = "gpt-3.5-turbo"
+    OPENAI_MODEL: str = "gpt-4o-mini"
     EMBEDDING_MODEL: str = "text-embedding-3-small"
     EMBEDDING_DIMENSIONS: int = 512  # OpenAI text-embedding-3 supports shorter vectors: smaller, faster, near-equal quality
 
