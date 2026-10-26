@@ -23,6 +23,11 @@ RETIRED_MODELS = {"gpt-3.5-turbo": "gpt-4o-mini"}
 CLAUDE_PROVIDER_NAME = "Claude (from secrets)"
 
 
+def _self_contained(rag, question: str) -> bool:
+    """A question that names a market and is not a short follow-up means the same thing in any conversation."""
+    return len(question.split()) >= 5 and any(r.lower() in question.lower() for r in rag.regions)
+
+
 def build_profile(budget: Optional[float], investor_type: str, risk_profile: str) -> Dict[str, Any]:
     return {"budget": int(budget) if budget else None, "type": investor_type, "risk_profile": risk_profile}
 
@@ -58,11 +63,16 @@ def chat_turn(rag, user: Dict[str, Any], messages: List[Dict[str, str]], profile
     store_ = store_ or default_store
     llm_cfg = store_.get_llm_config(llm_id)
 
-    key = None
+    key = standalone_key = None
     if llm_cfg:
+        fingerprint = query.fingerprint(rag)
         user_turns = [m["content"] for m in messages[-8:] if m["role"] == "user"]
-        key = make_cache_key("chat", user_turns, profile, llm_cfg, query.fingerprint(rag))
-        saved = store_.cache_get(key)
+        key = make_cache_key("chat", user_turns, profile, llm_cfg, fingerprint)
+        last_question = user_turns[-1] if user_turns else ""
+        # A self-contained question is also saved on its own, so asking it again later in a longer chat is still free.
+        if _self_contained(rag, last_question):
+            standalone_key = make_cache_key("chat-single", [last_question], profile, llm_cfg, fingerprint)
+        saved = store_.cache_get(key) or (store_.cache_get(standalone_key) if standalone_key else None)
         if saved:
             return {"answer": saved["answer"], "sources": saved["sources"], "usage": None, "llm": saved["llm"],
                     "questions": saved.get("clarifying_questions"), "cached": True, "success": True}
@@ -71,8 +81,11 @@ def chat_turn(rag, user: Dict[str, Any], messages: List[Dict[str, str]], profile
     if result.get("usage") and llm_cfg:
         store_.record_usage(user["username"], llm_cfg["id"], result["usage"])
     if key and result["success"] and result["usage"]:
-        store_.cache_put(key, {"answer": result["answer"], "sources": result["sources"], "llm": result["llm"],
-                               "clarifying_questions": result.get("clarifying_questions")})
+        payload = {"answer": result["answer"], "sources": result["sources"], "llm": result["llm"],
+                   "clarifying_questions": result.get("clarifying_questions")}
+        store_.cache_put(key, payload)
+        if standalone_key and not payload["clarifying_questions"]:
+            store_.cache_put(standalone_key, payload)
     return {"answer": result["answer"], "sources": result["sources"], "usage": result["usage"], "llm": result["llm"],
             "questions": result.get("clarifying_questions"), "cached": False, "success": result["success"]}
 

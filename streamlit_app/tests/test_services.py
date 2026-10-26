@@ -12,6 +12,7 @@ from store import Store  # noqa: E402
 class FakeRag:
     data_version = "dv1"
     retrieval_tag = "hybrid+rerank"
+    regions = ["Dubai", "Mumbai"]
 
     def __init__(self):
         self.chat_calls = 0
@@ -75,6 +76,29 @@ def test_repeated_chat_is_served_from_saved_answers_without_tokens(env):
     assert again["cached"] is True and again["usage"] is None
     assert rag.chat_calls == 1
     assert store.user_usage("bob")["total_tokens"] == 120
+
+
+def test_a_self_contained_question_is_saved_even_when_the_chat_has_grown(env):
+    store, rag, user, llm_id = env
+    services.chat_turn(rag, user, MSGS, PROFILE, llm_id, store_=store)
+    longer_chat = [
+        {"role": "user", "content": "Which city should I pick?"},
+        {"role": "assistant", "content": "To tailor this to you, I need a few details."},
+        {"role": "user", "content": "Where should I invest in Dubai?"},
+        {"role": "assistant", "content": "Dubai yields look strongest."},
+        {"role": "user", "content": "Where should I invest in Dubai?"},
+    ]
+    again = services.chat_turn(rag, user, longer_chat, PROFILE, llm_id, store_=store)
+    assert again["cached"] is True and rag.chat_calls == 1
+
+
+def test_a_short_follow_up_is_not_reused_across_conversations(env):
+    store, rag, user, llm_id = env
+    follow_up = lambda earlier: [{"role": "user", "content": earlier}, {"role": "assistant", "content": "ok"},
+                                 {"role": "user", "content": "and the costs?"}]
+    services.chat_turn(rag, user, follow_up("Tell me about Dubai rents"), PROFILE, llm_id, store_=store)
+    services.chat_turn(rag, user, follow_up("Tell me about Mumbai prices"), PROFILE, llm_id, store_=store)
+    assert rag.chat_calls == 2
 
 
 def test_a_different_profile_is_not_served_from_saved_answers(env):
