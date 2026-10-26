@@ -1,496 +1,315 @@
-# Property Investment RAG Consultant
+﻿# Property Investment RAG Consultant
 
-A sophisticated AI-powered property investment consulting system using Retrieval-Augmented Generation (RAG) technology. This system serves three primary user groups:
+A property research application that answers questions using local documents and external market context. It supports individual investors, wealth advisors, and relocation consultancies.
 
-- **Individual Property Investors** ($200K-$2M budget)
-- **Independent Wealth Advisors** serving HNIs
-- **Cross-border Relocation & Migration Consultancies**
+There are two interfaces: a React application backed by FastAPI, and a standalone Streamlit application that imports the same backend retrieval code directly.
 
-## 🎯 Features
+## Features
 
-### Core Capabilities
-- **Smart Chat Interface**: Ask property investment questions and get expert analysis
-- **Regional Comparison Tool**: Compare metrics across Dubai, Mumbai, and other markets
-- **Investment Advisor**: Personalized recommendations based on budget and risk profile
-- **Real-time Analysis**: Access to property data, regulations, research reports, and market data
-- **Multi-source Intelligence**: Aggregates PDFs, CSVs, APIs, and research documents
+- Chat with document sources and structured clarification questions.
+- Regional comparisons tailored to an investor profile.
+- Hybrid document retrieval: keyword search, embeddings, and optional reranking.
+- Market and currency context from World Bank, BIS, and currency APIs; availability and dates vary by source.
+- Login, admin and user roles, password management, and model selection in the React application.
+- Admin controls for documents, users, LLM providers, saved answers, and market-data refreshes.
+- Token usage tracking and cached answers in the FastAPI application.
+- Streamlit chat, persona and market selection, a yield calculator, and a separate SQLite answer cache.
 
-### Data Sources
-- Property price datasets and transaction histories
-- Rental yield information and market trends
-- Regulatory documents (UAE Golden Visa, tax information)
-- Research reports from leading real estate firms
-- API specifications for property lookups
+Answers are informational. Prompts require grounded figures, disclosure of missing data, and licensed advisor review for personalized investment decisions. Generated answers still require verification against their sources.
 
-## Adding a New City or Country
+## Project structure
 
-Every folder directly inside `data/` is treated as one market, named after the folder.
-
-```
-data/
-├── Dubai/
-├── Mumbai/
-├── London/        <- create a folder, drop in PDFs, CSVs, JSON or TXT files
-└── Singapore/
-```
-
-Then open **Status** (admin) and click **Reload Documents**. The new market appears in the Compare tab, in the footer, and in the bot's list of available markets. Questions about a market with no folder get a "no data" reply instead of guessed figures.
-
-## 🧭 Prompt Framework (CCSCR)
-
-The consultant's prompts follow the **CCSCR** framework: **C**ontext, **C**onstraints, **S**tructure, **C**heckpoints, **R**eview. The prompt text lives in `backend/rag_system.py` (`BASE_RULES`, `CHAT_FORMAT`, `COMPARE_FORMAT` and the helper methods that build each request).
-
-| Part | What it means here | Where it is | Status |
-|---|---|---|---|
-| **Context** | Role: global property investment analyst for three personas (individual investors $200K-$2M, wealth advisors serving HNIs, relocation firms). Each request carries the user's profile, the list of available markets, live macro/FX data and the retrieved document excerpts. | `BASE_RULES`, `_profile_block`, `_markets_block`, `_live_block`, `_context` | Implemented |
-| **Constraints** | Use only the supplied context and live data. No personalized financial advice ("requires a licensed advisor review"). Ranges instead of false precision. Tax and regulatory points are "indicative only". Flag missing or thin data. Never move a live figure from one market to another. | `BASE_RULES` | Implemented |
-| **Structure** | Full analysis in five parts (Market Context, Price Comparison, Rental Yield, Cost of Capital, Risk Flags) plus a Bottom line, about 200 words. Compare uses a shorter per-market format. Clarifying questions use a fixed `CLARIFY:` format that the UI turns into an answer form. | `CHAT_FORMAT`, `COMPARE_FORMAT`, `_parse_clarify` | Implemented |
-| **Checkpoints** | Flag data older than 18 months (each live figure carries its year). Add a currency volatility warning when currencies differ, backed by the 12-month FX move. Don't ask for details already given (`_known_facts`, `_drop_known`). Market not in the data gets a "no data" reply. | `BASE_RULES`, `market_data.py`, `_known_facts`, `_drop_known` | Partly implemented |
-| **Review** | Analytical, not salesy tone, with a "why it matters" for key metrics. Each answer lists its sources (documents and live APIs). | `BASE_RULES`, sources list in the chat UI | Partly implemented |
-
-**Not implemented yet**
-- Suggesting alternative cities when rental comparables are missing.
-- Cross-checking recent tax-rule changes against an official source.
-- Comparing answers against past advisor briefs in a knowledge base (add example briefs to `data/` to make them retrievable).
-- An automatic check that every figure in an answer appears in the documents or live data.
-
-If you change any prompt text, bump `CACHE_VERSION` in `backend/store.py` so saved answers written under the old rules are not reused.
-
-## 🔎 Retrieval (Hybrid RAG)
-
-Passages are found with **hybrid retrieval**, implemented in `backend/retriever.py`:
-
-1. **Keyword search** (TF-IDF) and **semantic search** (embeddings) each return their best candidates.
-2. The two rankings are merged with Reciprocal Rank Fusion.
-3. A **cross-encoder reranker** re-scores the top candidates and keeps the best few.
-4. If the question names a market, all of this runs inside that market's documents only.
-
-Embeddings are built in the background and cached in `backend/embeddings/` by passage hash. The app works immediately with keyword search plus the reranker, improves when embedding finishes, resumes after an interruption, and only embeds new or changed documents on later runs. The **Status** tab (admin) shows progress.
-
-| Setting in `backend/.env` | Meaning |
-|---|---|
-| `EMBEDDING_PROVIDER=auto` | Use OpenAI embeddings if an OpenAI key is configured, otherwise a local model (default) |
-| `EMBEDDING_PROVIDER=openai` | Always OpenAI (`text-embedding-3-small`, 512 dimensions). Fast; roughly $0.10-0.15 for about 28,000 passages |
-| `EMBEDDING_PROVIDER=local` | Local `bge-small` model via fastembed. Free and private, but slow on a laptop CPU (an hour or more for a large corpus) |
-| `EMBEDDING_PROVIDER=off` | Keyword search only |
-| `RERANK_ENABLED=false` | Skip the reranker (saves about a second per question) |
-
-Local models download on first use into `backend/models/` (about 200 MB). Changing the embedding provider or model builds a separate cache; the old one is kept.
-
-**Windows note:** `onnxruntime` must be imported before `scikit-learn`, otherwise Python crashes with a segmentation fault. `retriever.py` does this for you; keep that import at the top of the file.
-
-## 🏗️ System Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    React Dashboard (Frontend)                │
-│  - Chat Interface  - Comparison Tool  - Investment Advisor   │
-└────────────────────────────┬────────────────────────────────┘
-                             │ HTTP/REST
-┌────────────────────────────▼────────────────────────────────┐
-│              FastAPI Backend (Python)                        │
-│  - Query Processing  - RAG Logic  - Document Management     │
-└────────────────────────────┬────────────────────────────────┘
-                             │
-            ┌────────────────┼────────────────┐
-            │                │                │
-            ▼                ▼                ▼
-        ┌────────┐      ┌──────────┐    ┌──────────┐
-        │ Chroma │      │ OpenAI   │    │ Property │
-        │ DB     │      │ API      │    │ Data     │
-        │ (Vecs) │      │ (LLM)    │    │ (PDFs)   │
-        └────────┘      └──────────┘    └──────────┘
+```text
+Chatbot/
+|-- backend/
+|   |-- app.py                 FastAPI entry point and API routes
+|   |-- config.py              Environment settings and paths
+|   |-- rag_system.py          RAG orchestration, prompts, chat, comparisons
+|   |-- document_loader.py     PDF, CSV, JSON, and TXT ingestion
+|   |-- retriever.py           Keyword/semantic search, fusion, reranking
+|   |-- llm_client.py          Model-provider HTTP calls
+|   |-- market_data.py         External macroeconomic and currency context
+|   |-- store.py               Users, sessions, LLM settings, usage, answer cache
+|   |-- requirements.txt
+|   |-- .env.example
+|   `-- Dockerfile
+|-- frontend/
+|   |-- src/
+|   |   |-- main.jsx           Browser entry point
+|   |   |-- App.jsx            Application shell
+|   |   |-- api.jsx            Fetch wrapper and shared UI helpers
+|   |   |-- index.css          Tailwind layers and shared styles
+|   |   |-- App.css            Layout and navigation styles
+|   |   `-- components/        Login, chat, comparison, status, admin, password UI
+|   |-- package.json
+|   |-- vite.config.js
+|   |-- README.md
+|   `-- Dockerfile
+|-- streamlit_app/
+|   |-- app.py                 Streamlit entry point
+|   |-- app_pages/             Chat and yield calculator pages
+|   |-- advisor.py             Question-to-answer workflow
+|   |-- query.py               Direct reuse of backend RAG and market data
+|   |-- prompts.py             Persona-specific prompts
+|   |-- llm.py                 Claude/OpenAI model integration
+|   |-- tools.py               Yield and mortgage calculations
+|   |-- cache.py               SQLite answer cache
+|   |-- tests/                 Advisor and calculator tests
+|   |-- requirements.txt
+|   `-- README.md
+|-- data/                      One subfolder per property market
+|-- start.bat                  Windows launcher
+|-- stop.bat                   Windows server stop script
+|-- docker-compose.yml         Backend/frontend container configuration
+|-- QUICKSTART.md
+|-- LOCAL_MODE_GUIDE.md
+|-- PROJECT_SUMMARY.md
+|-- START_HERE_VSCODE.md
+|-- VSCODE_SETUP.md
+`-- README.md
 ```
 
-## 📋 Prerequisites
+Runtime files such as model downloads, embeddings, credentials, and user state are separate from application source.
 
-### System Requirements
-- Python 3.9+
-- Node.js 16+ and npm
-- 4GB RAM minimum
-- 2GB disk space for vector database
+## Architecture and request flow
 
-### API Keys & Credentials
-1. **OpenAI API Key**: Get from [platform.openai.com](https://platform.openai.com/api-keys)
-   - Required for LLM and embeddings
-   - Models used: `gpt-3.5-turbo` and `text-embedding-3-small`
+```text
+React browser UI -> FastAPI -> authentication and saved-answer lookup
+                                  |
+                                  v
+                            PropertyInvestmentRAG
+                                  |
+                   document retrieval + market context
+                                  |
+                                  v
+                              LLM provider
+                                  |
+                     answer + sources + usage -> React
 
-## 🚀 Local Setup Instructions
-
-### Step 1: Clone/Prepare Project
-
-```bash
-cd E:\Automation\AI\Chatbot
+Streamlit UI -> advisor/query -> shared backend retrieval + market context
+                      |
+               Streamlit LLM integration and SQLite cache
 ```
 
-### Step 2: Backend Setup
+On startup, the backend loads documents, splits them into passages, and builds a TF-IDF index. Semantic embeddings and the reranker load in the background. Keyword retrieval is available while those components initialize.
 
-#### Create Python Virtual Environment
-```bash
+For hybrid search, keyword and semantic rankings are merged with Reciprocal Rank Fusion. The optional cross-encoder reranker scores the candidates before the final passages are selected. Market-specific searches restrict candidates to that market.
+
+Chat and comparison routes check the saved-answer cache before generating a new response. Cache keys incorporate request context, model configuration, a document version marker, market-data stamp, and retrieval mode. Successful model responses are saved and their usage is recorded. Document reloads clear saved answers.
+
+The active retrieval pipeline uses NumPy, scikit-learn, and fastembed with on-disk embedding caches. Chroma settings and older container mounts remain in the repository, but Chroma is not the active retrieval engine. LangChain is used for document objects and text splitting.
+
+## Local setup: FastAPI and React
+
+Run these PowerShell commands from the project root. Use a Python version compatible with the pinned backend dependencies; Python 3.11 is a practical starting point. Node.js and npm are also required.
+
+### Backend
+
+```powershell
 cd backend
 python -m venv venv
-.\venv\Scripts\activate
+.\venv\Scripts\python.exe -m pip install -r requirements.txt
+Copy-Item .env.example .env
 ```
 
-#### Install Dependencies
-```bash
-pip install -r requirements.txt
-```
+Edit `backend/.env` for your installation. Example settings:
 
-#### Configure Environment Variables
-```bash
-# Copy example to create .env file
-copy .env.example .env
-
-# Edit .env with your configuration
-# Most importantly, add your OpenAI API key:
-# OPENAI_API_KEY=sk-...
-```
-
-**Key Configuration Fields:**
-```env
-# Required
+```dotenv
 OPENAI_API_KEY=your_key_here
-OPENAI_MODEL=gpt-3.5-turbo
-EMBEDDING_MODEL=text-embedding-3-small
-
-# Data paths (relative to backend folder)
-
-# RAG Settings
-CHUNK_SIZE=1000
-CHUNK_OVERLAP=200
-RETRIEVAL_K=5
+OPENAI_MODEL=gpt-4o-mini
+DATA_BASE_PATH=../data
+EMBEDDING_PROVIDER=auto
+RERANK_ENABLED=true
 ```
 
-#### Start Backend Server
-```bash
-python app.py
-# OR
-uvicorn app:app --host 0.0.0.0 --port 8000 --reload
+An OpenAI key is optional for local retrieval. Model-generated answers require an enabled LLM configuration; administrators can manage providers through the application. Local embeddings do not imply a locally hosted answer-generation model.
+
+Start the backend from `backend/` so relative paths and `.env` resolve correctly:
+
+```powershell
+.\venv\Scripts\python.exe app.py
 ```
 
-**Expected Output:**
-```
-Initializing RAG system...
-Loading Dubai data from: ../data/Dubai
-Loading Mumbai data from: ../data/Mumbai
-Total documents loaded: 45
-Documents split into 250 chunks
-RAG System initialized successfully!
+The first run creates an admin account. Its username defaults to `admin`. Set `ADMIN_PASSWORD` before the first run to choose its initial password; otherwise the backend prints a generated password once. Changing that environment variable later does not reset an existing account.
 
-Uvicorn running on http://0.0.0.0:8000
-```
+### Frontend
 
-### Step 3: Frontend Setup
+In a second terminal, from the project root:
 
-#### Install Dependencies
-```bash
-cd ../frontend
+```powershell
+cd frontend
 npm install
-```
-
-#### Create Environment File
-```bash
-# Copy example to create .env.local
-copy .env.example .env.local
-```
-
-**Frontend Environment:**
-```env
-VITE_API_URL=http://localhost:8000
-VITE_APP_TITLE=Property Investment RAG Consultant
-```
-
-#### Start Development Server
-```bash
 npm run dev
 ```
 
-**Expected Output:**
-```
-  VITE v5.0.0 ready in 123 ms
+The frontend defaults to `http://localhost:8000` for API requests. To override it, create `frontend/.env.local`:
 
-  ➜  Local:   http://localhost:5173/
-  ➜  press h to show help
+```dotenv
+VITE_API_URL=http://localhost:8000
 ```
 
-### Step 4: Access the Application
+| Service | Local URL |
+|---|---|
+| React application | http://localhost:5173 |
+| FastAPI health check | http://localhost:8000/health |
+| Interactive API documentation | http://localhost:8000/docs |
 
-Open your browser and navigate to:
+### Windows launch scripts
+
+After dependencies and environments are installed, run from the project root:
+
+```powershell
+.\start.bat
 ```
-http://localhost:5173
-```
 
-## 📊 Data Structure
+Supported options:
 
-Ensure your property data is organized as follows:
+- `all`: also starts Streamlit if its environment exists.
+- `dev`: enables backend auto-reload.
+- `nobrowser`: skips opening the browser.
+- `dryrun`: displays launch actions without starting servers.
 
-```
+For example: `.\start.bat all nobrowser`.
+
+`.\stop.bat` stops processes listening on ports 8000, 5173, and 8501 by default, and closes matching launcher processes. Check those ports before using it if other applications share them.
+
+## Property data
+
+Place documents in market folders:
+
+```text
 data/
-├── Dubai/
-│   ├── Dataset/
-│   │   └── Dubai real estate transactions-2026.csv
-│   ├── API/
-│   │   └── SDGDLDEjariLookups_swagger.json
-│   ├── regulation/
-│   │   ├── UAE-Golden-Visa-By-Investment.pdf
-│   │   └── *.pdf
-│   ├── research/
-│   │   ├── Colliers-Report.pdf
-│   │   └── *.pdf
-│   ├── tax/
-│   │   └── *.pdf
-│   └── faq/
-│       └── *.txt
-└── Mumbai/
-    ├── archive/
-    │   ├── locality_prices_monthly.csv
-    │   ├── metro_stations.csv
-    │   ├── rentals.csv
-    │   ├── secondary_sales.csv
-    │   └── under_construction.csv
-    └── [other folders]
+|-- Dubai/
+|   |-- research/
+|   |-- regulation/
+|   `-- datasets/
+|-- Mumbai/
+`-- London/
 ```
 
-## 🎮 Using the Application
+PDF, CSV, JSON, and TXT files are supported. Each immediate subfolder of `data/` defines a market; nested folders organize its documents. Market names are discovered from the data rather than hardcoded into the UI.
 
-### 1. Chat with Consultant
-- Ask any property investment question
-- Set your investor profile (budget, type, risk preference)
-- Get instant expert analysis with source citations
+After adding or changing data, use the admin document reload action or restart the backend. Reloading also clears saved answers. Semantic indexing may continue in the background; check retrieval status for progress.
 
-**Example Questions:**
-- "What's the current price trend for 2-bedroom apartments in Dubai?"
-- "Compare rental yields between Dubai and Mumbai"
-- "What are the investment options for a $500K budget?"
+The Streamlit application needs access to the same documents. Its retrieval module reuses `backend/embeddings/` and `backend/models/` when present; otherwise it uses its own `.state` paths.
 
-### 2. Regional Comparison
-- Select metrics: rental yields, prices, market growth, etc.
-- Choose regions to compare
-- Get detailed comparative analysis
+## Configuration and persistence
 
-**Supported Metrics:**
-- Rental yields
-- Property prices
-- Market growth
-- Affordability index
-- Investment returns
-- Transaction volume
+Backend defaults live in `backend/config.py` and can be overridden through `backend/.env`.
 
-### 3. Investment Recommendations
-- Enter your budget ($200K - $2M+)
-- Choose risk profile (conservative/moderate/aggressive)
-- Select target regions
-- Get personalized investment strategy
+| Setting | Default / purpose |
+|---|---|
+| `DATA_BASE_PATH` | `../data`; market documents |
+| `OPENAI_MODEL` | `gpt-4o-mini`; default environment-seeded provider model |
+| `EMBEDDING_PROVIDER` | `auto`: OpenAI when a key is available, otherwise local |
+| `EMBEDDING_MODEL` | `text-embedding-3-small` |
+| `EMBEDDING_DIMENSIONS` | `512` |
+| `LOCAL_EMBEDDING_MODEL` | `BAAI/bge-small-en-v1.5` |
+| `RERANK_ENABLED` | `true` |
+| `RERANK_MODEL` | `Xenova/ms-marco-MiniLM-L-6-v2` |
+| `EMBEDDINGS_DIR` | `./embeddings`; cached vectors |
+| `MODELS_DIR` | `./models`; downloaded local models |
+| `DATA_STORE_PATH` | `./data_store.json`; users, sessions, provider settings, usage, answers |
+| `MARKET_CACHE_PATH` | `./market_cache.json`; external market context |
+| `CHUNK_SIZE` / `CHUNK_OVERLAP` | `1000` / `200` |
+| `RETRIEVAL_K` | `5` |
 
-### 4. System Status
-- View document statistics
-- Monitor system health
-- Reload documents after updates
+`EMBEDDING_PROVIDER` also accepts `openai`, `local`, or `off`. Setting it to `off` disables semantic embeddings; reranking is controlled separately. Local models download on first use. Different providers/models use separate embedding caches.
 
-## 🔧 Backend API Endpoints
+Passwords are stored as salted hashes. Treat the application state file as sensitive: it also contains sessions and provider credentials. Do not commit `.env`, state files, or Streamlit secrets.
 
-### Chat & Queries
-```bash
-# Simple query
-POST /api/query
+## API routes
+
+The React application sends bearer tokens in the `Authorization` header. Most application routes require authentication; administrative routes require the admin role.
+
+| Access | Method | Route | Purpose |
+|---|---|---|---|
+| Public | GET | `/`, `/health` | Service metadata and health |
+| Public | POST | `/api/auth/login` | Create a login session |
+| Token-based | POST | `/api/auth/logout` | Remove the supplied session |
+| Signed in | GET | `/api/auth/me` | Current user and usage |
+| Signed in | POST | `/api/auth/change-password` | Change password |
+| Signed in | GET | `/api/llms` | Available models |
+| Signed in | GET | `/api/system-stats` | Document statistics |
+| Signed in | POST | `/api/chat` | Conversational research |
+| Signed in | POST | `/api/compare-regions` | Compare a metric across markets |
+| Admin | POST | `/api/reload-documents` | Reload documents and clear answers |
+| Admin | GET, DELETE | `/api/admin/cache` | Inspect or clear saved answers |
+| Admin | GET | `/api/admin/retrieval` | Retrieval/indexing status |
+| Admin | GET | `/api/admin/market-data` | Market-data snapshot |
+| Admin | POST | `/api/admin/market-data/refresh` | Refresh external data |
+| Admin | GET, POST | `/api/admin/users` | List or create users |
+| Admin | DELETE | `/api/admin/users/{username}` | Delete a user |
+| Admin | POST | `/api/admin/users/{username}/password` | Reset a password |
+| Admin | GET, POST | `/api/admin/llms` | List or create model configurations |
+| Admin | PATCH, DELETE | `/api/admin/llms/{llm_id}` | Update or delete a configuration |
+| Admin | POST | `/api/admin/llms/{llm_id}/test` | Test a model connection |
+
+Example chat body:
+
+```json
 {
-  "question": "What are the best investment opportunities in Dubai for $500K?"
+  "messages": [{"role": "user", "content": "Compare rental yields in Dubai and Mumbai"}],
+  "user_profile": {"budget": 500000, "type": "individual", "risk_profile": "moderate"}
 }
+```
 
-# Conversation with context
-POST /api/chat
-{
-  "messages": [{"role": "user", "content": "..."}],
-  "user_profile": {
-    "budget": 500000,
-    "type": "individual",
-    "risk_profile": "moderate"
-  }
-}
+Example comparison body:
 
-# Regional comparison
-POST /api/compare-regions
+```json
 {
   "metric": "rental yields",
   "regions": ["Dubai", "Mumbai"]
 }
-
-# Investment recommendation
-POST /api/investment-recommendation
-{
-  "budget": 500000,
-  "risk_profile": "moderate",
-  "target_regions": ["Dubai", "Mumbai"]
-}
 ```
 
-### System Management
-```bash
-# Get system stats
-GET /api/system-stats
+Both accept an optional `llm_id`. The older `/api/query` and `/api/investment-recommendation` endpoints are not present in the current API.
 
-# Reload documents
-POST /api/reload-documents
+## Streamlit application
 
-# Health check
-GET /health
-```
+The standalone demo imports backend retrieval code rather than calling the FastAPI server. It has its own advisor workflow, Claude/OpenAI integration, SQLite answer cache, and calculator tools. It does not provide the React application's authentication/admin interface.
 
-## 📈 Supported Use Cases
+See [streamlit_app/README.md](streamlit_app/README.md) for environment setup, secrets, startup, tests, and deployment. Its default local URL is `http://localhost:8501`.
 
-### For Individual Investors
-- Market analysis and trend identification
-- Property price comparisons
-- ROI calculations
-- Risk assessment
+## Development checks
 
-### For Wealth Advisors
-- Client portfolio recommendations
-- Multi-market analysis
-- Risk-adjusted strategies
-- Regulatory compliance guidance
+Frontend checks, from `frontend/`:
 
-### For Relocation Consultancies
-- City-to-city property comparisons
-- Cost of living vs. investment returns
-- Immigration-friendly markets
-- Currency and tax considerations
-
-## 🛠️ Development Notes
-
-### Adding New Property Data
-1. Place data files in `data/<City or Country>/` folders
-2. Supported formats: PDF, CSV, JSON, TXT
-3. Restart backend or call `/api/reload-documents` endpoint
-
-### Customizing RAG Behavior
-Edit `backend/rag_system.py`:
-```python
-# Adjust chunk size for better context
-CHUNK_SIZE=1000
-
-# Change number of retrieved documents
-RETRIEVAL_K=5
-
-# Modify system prompt in _setup_qa_chain()
-```
-
-### Extending for New Regions
-1. Create new folder: `data/NewCity/`
-2. Add data files
-3. Update config in `backend/config.py`:
-```python
-NEW_CITY_DATA_PATH = "../data/NewCity"
-```
-4. Modify document loader to include new region
-5. Restart backend
-
-## 🔐 Security Considerations
-
-- Keep OpenAI API key in `.env` file (never commit)
-- Use environment variables for all secrets
-- Implement rate limiting in production
-- Add authentication layer for enterprise use
-- Sanitize user inputs before processing
-
-## 📦 Production Deployment
-
-### Backend Deployment (e.g., Heroku, AWS)
-```bash
-# Build for production
-gunicorn app:app --workers 4
-
-# Environment variables must be set on host
-OPENAI_API_KEY=...
-```
-
-### Frontend Deployment (e.g., Vercel, Netlify)
-```bash
+```powershell
+npm run lint
 npm run build
-# Deploy the 'dist' folder
 ```
 
-### Docker Deployment
-```dockerfile
-# Backend Dockerfile
-FROM python:3.9-slim
-WORKDIR /app
-COPY backend/requirements.txt .
-RUN pip install -r requirements.txt
-COPY backend .
-CMD ["gunicorn", "app:app"]
+Streamlit advisor and calculator tests, from its configured environment in `streamlit_app/`:
+
+```powershell
+python -m pytest tests
 ```
 
-## 🐛 Troubleshooting
+These commands cover their respective areas; they are not a complete integration test of the running application.
 
-### Backend Won't Start
-```
-Error: OPENAI_API_KEY not found
-Solution: Check .env file and ensure OPENAI_API_KEY is set
+## Prompt maintenance
 
-Error: Documents not loading
-Solution: Verify data/ folder structure and file permissions
+The FastAPI application's prompt rules live in `backend/rag_system.py`: `BASE_RULES`, `CHAT_FORMAT`, and `COMPARE_FORMAT`. They describe context, constraints, structure, checkpoints, and review expectations. Profile, available-market, retrieved-document, and external-data blocks are assembled per request.
 
-Error: ModuleNotFoundError
-Solution: Activate venv and reinstall: pip install -r requirements.txt
-```
+When changing prompt behavior, bump `CACHE_VERSION` in `backend/store.py` or clear saved answers so earlier responses are not reused. Streamlit has separate prompts in `streamlit_app/prompts.py` and its own saved-answer cache.
 
-### Frontend Won't Load
-```
-Error: Cannot POST /api/query
-Solution: Ensure backend is running on http://localhost:8000
+There is no automatic guarantee that every generated figure appears in the supplied evidence. Tax-rule verification and external market-data coverage depend on available sources.
 
-Error: Blank page
-Solution: Check browser console (F12) for errors, ensure npm run dev is running
-```
+## Containers
 
-### RAG System Not Working
-```
-Error: Vector store initialization failed
-Solution: Delete chroma_db/ folder and restart (will rebuild)
+The repository includes backend/frontend Dockerfiles and `docker-compose.yml`. The Compose configuration still contains older model settings and Chroma mounts; review it before deployment. For a browser-based frontend, `VITE_API_URL` must be reachable from the browser, rather than using a container-only hostname such as `backend`.
 
-Error: Low quality responses
-Solution: Increase RETRIEVAL_K in config.py for more context documents
-```
+Persist the current JSON state, market cache, embeddings, and model directories when configuring containers. The existing Chroma volume does not cover those paths. The Compose setup does not launch Streamlit.
 
-## 📚 Technology Stack
+## Further documentation
 
-### Backend
-- **FastAPI**: Modern async REST framework
-- **LangChain**: RAG and LLM orchestration
-- **Chroma**: Vector database
-- **OpenAI**: LLM and embeddings
-- **PyPDF2**: PDF processing
-- **Pandas**: Data handling
+- [Frontend setup and styling](frontend/README.md)
+- [Streamlit setup and architecture](streamlit_app/README.md)
+- [Quick start](QUICKSTART.md)
+- [VS Code setup](VSCODE_SETUP.md)
+- [VS Code getting started](START_HERE_VSCODE.md)
+- [Local mode guide](LOCAL_MODE_GUIDE.md)
+- [Project summary](PROJECT_SUMMARY.md)
 
-### Frontend
-- **React 18**: UI framework
-- **Vite**: Fast build tool
-- **Recharts**: Data visualization
-- **Lucide Icons**: Icon library
-- **Tailwind CSS**: Styling
-
-## 📞 Support & Feedback
-
-For issues or feature requests:
-1. Check logs: Backend logs in terminal, frontend logs in browser console (F12)
-2. Verify all prerequisites are installed
-3. Ensure API keys are valid
-4. Check internet connection for OpenAI API calls
-
-## 📄 License
-
-This project is part of a property investment analysis suite.
-
-## 🎓 Learning Resources
-
-- [LangChain Documentation](https://python.langchain.com/)
-- [OpenAI API Guide](https://platform.openai.com/docs)
-- [React Documentation](https://react.dev)
-- [Vite Guide](https://vitejs.dev)
-
----
-
-**Last Updated**: October 2024
-**Version**: 1.0.0
+The supporting guides may retain older setup examples. Use the current source and this README when they differ.
