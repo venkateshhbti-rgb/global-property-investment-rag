@@ -6,7 +6,7 @@ A complete, production-ready RAG-based property investment consulting system wit
 
 ### Project Location
 ```
-E:\Personal\AI\property-rag-chatbot\
+E:\Automation\AI\Chatbot\
 ```
 
 ## 🏛️ Architecture Overview
@@ -48,7 +48,7 @@ E:\Personal\AI\property-rag-chatbot\
 ## 📁 Complete File Structure
 
 ```
-property-rag-chatbot/
+Chatbot/
 │
 ├── README.md                 # Main documentation
 ├── QUICKSTART.md            # 3-step setup guide

@@ -14,7 +14,7 @@ A fully functional **Property Investment RAG System** running locally with:
 ### Terminal 1: Backend
 
 ```powershell
-cd E:\Personal\AI\property-rag-chatbot\backend
+cd E:\Automation\AI\Chatbot\backend
 python -m venv venv
 .\venv\Scripts\activate
 pip install -r requirements.txt
@@ -28,7 +28,7 @@ python app.py
 Open **new PowerShell** (not tab in VS Code, a separate window):
 
 ```powershell
-cd E:\Personal\AI\property-rag-chatbot\frontend
+cd E:\Automation\AI\Chatbot\frontend
 npm install
 npm run dev
 ```
@@ -90,7 +90,7 @@ Ctrl+Click the link or go to: **http://localhost:5173**
 ## 📂 Project Structure
 
 ```
-E:\Personal\AI\property-rag-chatbot\
+E:\Automation\AI\Chatbot\
 ├── backend/               ← Python server
 │   ├── app.py            ← REST API
 │   ├── rag_system.py     ← Local search logic

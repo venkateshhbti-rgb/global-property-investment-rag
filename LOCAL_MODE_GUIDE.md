@@ -26,7 +26,7 @@ Just these three things:
 
 ```bash
 # From PowerShell or Command Prompt
-cd E:\Personal\AI\property-rag-chatbot
+cd E:\Automation\AI\Chatbot
 code .
 ```
 
@@ -359,7 +359,7 @@ Perfect setup:
 ## 📚 File Structure Reference
 
 ```
-property-rag-chatbot/
+Chatbot/
 ├── backend/
 │   ├── .env ← Configuration (OPENAI_API_KEY empty)
 │   ├── app.py ← API server

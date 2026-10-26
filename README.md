@@ -120,7 +120,7 @@ Local models download on first use into `backend/models/` (about 200 MB). Changi
 ### Step 1: Clone/Prepare Project
 
 ```bash
-cd E:\Personal\AI\property-rag-chatbot
+cd E:\Automation\AI\Chatbot
 ```
 
 ### Step 2: Backend Setup

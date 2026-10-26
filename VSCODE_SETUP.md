@@ -13,12 +13,12 @@ Get the RAG system running locally in VS Code in **5 minutes** without any API k
 
 ### Method 1: Open Folder
 1. **File** → **Open Folder**
-2. Navigate to: `E:\Personal\AI\property-rag-chatbot`
+2. Navigate to: `E:\Automation\AI\Chatbot`
 3. Click **Select Folder**
 
 ### Method 2: Command Line
 ```bash
-cd E:\Personal\AI\property-rag-chatbot
+cd E:\Automation\AI\Chatbot
 code .
 ```
 
@@ -30,7 +30,7 @@ code .
 
 You should see:
 ```
-E:\Personal\AI\property-rag-chatbot>
+E:\Automation\AI\Chatbot>
 ```
 
 ### Step 2: Create Python Virtual Environment
@@ -44,7 +44,7 @@ python -m venv venv
 
 You should see `(venv)` prefix in terminal:
 ```
-(venv) E:\Personal\AI\property-rag-chatbot\backend>
+(venv) E:\Automation\AI\Chatbot\backend>
 ```
 
 ### Step 3: Install Backend Dependencies
