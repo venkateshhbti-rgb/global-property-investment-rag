@@ -1,19 +1,17 @@
-"""Retrieval for the Streamlit app.
+"""Bootstraps the backend's engine for the Streamlit app.
 
-Reuses the backend's hybrid retriever (keyword + semantic + reranker), so there is no second index to maintain.
-`search()` returns (text, metadata) pairs instead of printing them.
+The app reuses the backend modules (retriever, RAG, store, market data) directly, in the same process, so it behaves
+exactly like the FastAPI + React app without needing that server.
 """
-import datetime as dt
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 APP_DIR = Path(__file__).resolve().parent
 ROOT = APP_DIR.parent
 BACKEND = ROOT / "backend"
 STATE = APP_DIR / ".state"
-ALL_MARKETS = "All markets"
 
 
 def _configure() -> None:
@@ -57,53 +55,14 @@ def get_rag() -> PropertyInvestmentRAG:
     return _rag
 
 
+def fingerprint(rag: Optional[PropertyInvestmentRAG] = None) -> str:
+    """Changes when the documents, live data or search mode change, so saved answers don't go stale."""
+    rag = rag or get_rag()
+    return f"{rag.data_version}:{market_data.stamp()}:{rag.retrieval_tag}"
+
+
 def countries() -> List[str]:
     return get_rag().regions
-
-
-def _file_date(source: Optional[str]) -> Optional[str]:
-    """Last-modified date of the source file. The documents carry no effective date, so this is the closest signal."""
-    try:
-        return dt.datetime.fromtimestamp(os.path.getmtime(source)).strftime("%Y-%m-%d") if source else None
-    except OSError:
-        return None
-
-
-def search(query: str, country: Optional[str] = None, k: int = 5) -> List[Tuple[str, Dict[str, Any]]]:
-    """Return [(text, metadata), ...] for the best passages, optionally restricted to one country."""
-    rag = get_rag()
-    region = None if country in (None, "", ALL_MARKETS) else country
-    topic = rag._without_regions(query) if region else query
-    hits = []
-    for doc in rag.retrieve(topic, k=k, region=region):
-        m = doc.metadata
-        hits.append((doc.page_content, {
-            "source_file": m.get("file_name", "unknown"),
-            "page": m.get("page_number"),
-            "country": m.get("region"),
-            "doc_type": m.get("document_type"),
-            "file_date": _file_date(m.get("source")),
-        }))
-    return hits
-
-
-def live_context(country: Optional[str], hits: List[Tuple[str, Dict[str, Any]]]) -> str:
-    """Dated World Bank / BIS / FX figures for the selected country, or for the countries the hits came from."""
-    if country in (None, "", ALL_MARKETS):
-        names = []
-        for _, meta in hits:
-            if meta["country"] and meta["country"] not in names:
-                names.append(meta["country"])
-        names = names[:3]
-    else:
-        names = [country]
-    return market_data.context_for(names)[0]
-
-
-def cache_fingerprint() -> str:
-    """Changes when the documents, live data or retrieval mode change, so saved answers don't go stale."""
-    rag = get_rag()
-    return f"{rag.data_version}:{market_data.stamp()}:{rag.retrieval_tag}"
 
 
 def status() -> Dict[str, Any]:

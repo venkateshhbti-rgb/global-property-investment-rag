@@ -1,68 +1,61 @@
-﻿# Property Investment Advisor (Streamlit app)
+﻿# Property Investment Consultant (Streamlit app)
 
-A chat app on top of the project's existing retrieval pipeline. It is the fastest route for an MVP or a demo. Move to the FastAPI + React app in the parent folder when you need real users, logins or billing.
+The same consultant as the FastAPI + React app, as a single Streamlit app that is easy to host. It runs the backend's engine in the same process, so answers, accounts, saved keys and token counts behave identically.
 
-| Layer | What it uses |
+| You get | Where |
 |---|---|
-| Model | Claude (default when `ANTHROPIC_API_KEY` is set) or OpenAI |
-| Workflow | question -> filter by country -> hybrid retrieval (keyword + semantic + reranker) -> live open data -> LLM writes the answer |
-| Platform | the backend's retriever and embeddings, SQLite answer cache, keys in `.streamlit/secrets.toml` |
-| Application | persona and country dropdowns, chat with source citations, yield calculator, disclaimer footer |
-
-There is no Chroma here: the backend's own retriever already stores its embeddings on disk, and avoids Chroma's C++ build requirement on Windows.
+| Sign in and sign out, change password | login screen, sidebar |
+| Token counter, model picker, investor profile (budget, type, risk) | sidebar |
+| **Chat** with sources, clarifying-question forms and saved answers | Chat page |
+| **Compare** markets on a metric | Compare page |
+| **Yield calculator** (all maths done by code, never the AI) | Yield calculator page |
+| **Status** (admins only): documents, search quality, live market data, AI models, users | Status page |
 
 ## Files
 
 | File | Job |
 |---|---|
-| `app.py` | entrypoint: sidebar (persona, country, model), navigation, disclaimer footer |
-| `app_pages/chat.py` | the chat page with source citations |
-| `app_pages/yield_calculator.py` | the yield calculator page |
-| `advisor.py` | the question -> answer workflow (no Streamlit imports, so it is unit-tested) |
-| `query.py` | `search(query, country, k)` returns `(text, metadata)` pairs |
-| `prompts.py` | one Context / Constraints / Structure / Checkpoints / Review system prompt per persona |
-| `tools.py` | `calc_yield()` and `mortgage_payment()`: all maths happens here, never in the LLM |
-| `llm.py` | model choice (Claude or OpenAI) |
-| `cache.py` | SQLite cache: a repeated question costs no tokens |
-| `tests/` | unit tests: `test_tools.py` (calculator) and `test_advisor.py` (answer workflow and cache) |
+| `app.py` | entrypoint: sign-in, sidebar, navigation, disclaimer footer |
+| `app_pages/chat.py`, `compare.py`, `status.py`, `yield_calculator.py` | the pages |
+| `services.py` | the chat and compare workflow (no Streamlit imports, so it is unit-tested) |
+| `query.py` | points the backend's engine at this app's folders and loads it |
+| `tools.py` | `calc_yield()` and `mortgage_payment()` |
+| `ui.py` | small display helpers |
+| `tests/` | unit tests for the calculator and the workflow |
 
-## Run it
+## Run it locally
 
 From the project root, in PowerShell:
 
 ```powershell
 cd streamlit_app
 python -m venv .venv
-.\.venv\Scripts\activate
-pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 copy .streamlit\secrets.toml.example .streamlit\secrets.toml
 ```
 
-Put at least one key in `.streamlit/secrets.toml`, then:
+Edit `.streamlit/secrets.toml` (an `OPENAI_API_KEY` and an `ADMIN_PASSWORD`), then:
 
 ```powershell
-streamlit run app.py
+.\.venv\Scripts\python.exe -m streamlit run app.py
 ```
 
-The first start loads the documents and the search index and takes about a minute. If `backend/embeddings/` exists (built by the backend), the app reuses it.
+Or double-click `start.bat all` in the project root. Sign in with `ADMIN_USERNAME` / `ADMIN_PASSWORD`.
 
-Run the tests with `pytest tests` (27 tests: the calculator, the answer workflow and its cache).
+The first start loads the documents and the search index and takes about a minute. If `backend/embeddings/` exists, the app reuses it.
 
-Behaviour worth knowing:
-- Changing the persona or country starts a fresh context for the model. Earlier replies written for another persona are not sent, because they would otherwise act as format examples and the new persona's layout would be ignored.
-- Saved answers are keyed by persona, country, model, the question, and a fingerprint of the documents, live data and search mode. A repeated question costs no tokens. Use **Clear saved answers** after editing prompts.
-- Only the Claude path is untested here (no Anthropic key was available); the OpenAI path is tested end to end.
+Run the tests with `.\.venv\Scripts\python.exe -m pytest tests`.
 
-## Making it trustworthy
+## Deploy on Streamlit Community Cloud
 
-- Each persona prompt says to answer only from the supplied context, otherwise "I don't have that in the documents".
-- Every answer shows its sources with the file, page and the file's last-updated date. The documents carry no effective date, so the file date is the closest signal.
-- Live figures (World Bank, BIS, exchange rates) are shown with their year.
-- All yield and mortgage numbers come from `tools.py`.
-- The footer carries the "informational only" disclaimer.
+1. Push the repo, then create the app with `streamlit_app/app.py` as the main file.
+2. Paste your secrets (same format as `secrets.toml.example`) into the app's **Secrets** box. At minimum: `OPENAI_API_KEY` and `ADMIN_PASSWORD`.
+3. **Documents:** the `data/` folder is gitignored because it holds third-party reports, so a public deployment has nothing to search. The Chat page warns about this. Either deploy from a **private** repo that includes `data/` (and, to skip the long first indexing, `backend/embeddings/`), or add a small set of documents you are free to share.
+4. **Privacy:** a Community Cloud app is public by default and uses your API key. Use the app's **Share** setting to restrict it to people you invite. The sign-in screen controls who can use the app, but only the Share setting stops strangers reaching the sign-in page.
 
-## Deploying (Streamlit Community Cloud)
+### Limits on Streamlit Cloud
 
-1. The `data/` folder is gitignored because it holds third-party reports. On Cloud the app needs the documents, so either use a **private** repo that includes them, or add a download step in `query.py` that fetches them at startup.
-2. Add the keys in the app's Secrets box (same format as `secrets.toml`).
-3. The first start on Cloud has to embed the documents. Commit `backend/embeddings/*.npz` to the private repo to skip that.
+- **Storage is temporary.** Users, models and keys added in the Status page are lost when the app restarts or sleeps. Put what must last into the secrets: the admin account (`ADMIN_USERNAME`, `ADMIN_PASSWORD`), `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` are recreated automatically on every start. Lasting user accounts would need an external database.
+- **Reloading the page signs you out.** Sessions live in the browser tab.
+- **Memory is limited**, so keep the document set modest.
+- **Retired models:** an OpenAI provider on `gpt-3.5-turbo` is moved to `gpt-4o-mini` automatically on start.
